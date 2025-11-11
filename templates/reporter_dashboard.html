@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporter Dashboard - Weekend Shifts</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 24px;
+        }
+        
+        .user-info {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .logout-btn {
+            padding: 8px 16px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .status-bar {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-bar.locked {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .instructions {
+            background: #e7f3ff;
+            border-left: 4px solid #FF6B35;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .instructions h3 {
+            color: #E85A2B;
+            margin-bottom: 10px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 5px;
+            color: #555;
+        }
+        
+        .shift-type-prefs {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .shift-type-prefs h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .shift-type-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .shift-type-item label {
+            flex: 1;
+            font-weight: 500;
+        }
+        
+        .shift-type-item select {
+            width: 80px;
+            padding: 5px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .calendar-grid {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .calendar-grid h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .month-section {
+            margin-bottom: 30px;
+        }
+        
+        .month-header {
+            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px 8px 0 0;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .calendar-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 2px solid #e1e4e8;
+            border-top: none;
+        }
+        
+        .calendar-header-row {
+            background: #f8f9fa;
+        }
+        
+        .calendar-header-cell {
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            color: #333;
+            border: 1px solid #e1e4e8;
+            font-size: 14px;
+        }
+        
+        .calendar-day-cell {
+            padding: 10px;
+            vertical-align: top;
+            border: 1px solid #e1e4e8;
+            height: 120px;
+            background: #fafafa;
+        }
+        
+        .calendar-day-cell.weekend-day {
+            background: white;
+        }
+        
+        .calendar-day-cell.empty {
+            background: #f8f9fa;
+        }
+        
+        .day-number {
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        .day-shifts {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .shift-button {
+            padding: 6px 8px;
+            border: 2px solid #e1e4e8;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 11px;
+            text-align: center;
+            background: white;
+        }
+        
+        .shift-button:hover {
+            transform: scale(1.02);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .shift-button.top-selected {
+            background: #d4edda;
+            border-color: #28a745;
+            font-weight: 600;
+        }
+        
+        .shift-button.bottom-selected {
+            background: #f8d7da;
+            border-color: #dc3545;
+            font-weight: 600;
+        }
+        
+        .shift-button.assigned {
+            background: #cfe2ff;
+            border-color: #0d6efd;
+            cursor: default;
+        }
+        
+        .shift-badge {
+            display: inline-block;
+            padding: 1px 5px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-left: 4px;
+        }
+        
+        .badge-top {
+            background: #28a745;
+            color: white;
+        }
+        
+        .badge-bottom {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .badge-assigned {
+            background: #0d6efd;
+            color: white;
+        }
+        
+        .selection-summary {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .selection-summary h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .stat-box {
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .stat-box.top {
+            background: #d4edda;
+        }
+        
+        .stat-box.bottom {
+            background: #f8d7da;
+        }
+        
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .submit-btn:hover:not(:disabled) {
+            background: #218838;
+        }
+        
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .alert-danger {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .assigned-shifts {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .assigned-shifts h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .assigned-shift {
+            padding: 10px;
+            background: #e7f3ff;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Weekend Reporter Shifts</h1>
+                <div class="user-info">Logged in as: {{ username }}</div>
+            </div>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </header>
+        
+        {% if is_locked %}
+        <div class="status-bar locked">
+            <strong>⚠️ Preferences are locked.</strong> The submission deadline has passed. Your selections are final.
+        </div>
+        {% else %}
+        <div class="status-bar">
+            <strong>Deadline:</strong> {{ deadline }} | Please submit your preferences before the deadline.
+        </div>
+        {% endif %}
+        
+        {% if assignments and username in assignments and assignments[username] %}
+        <div class="assigned-shifts">
+            <h3>🎯 Your Assigned Shifts</h3>
+            {% for shift_id in assignments[username] %}
+                {% set shift = shifts|selectattr('id', 'equalto', shift_id)|first %}
+                <div class="assigned-shift">
+                    <strong>{{ shift.day }}, {{ shift.date }}</strong><br>
+                    {{ shift.time }}
+                </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        {% if not is_locked %}
+        <div class="instructions">
+            <h3>📋 How to Submit Your Preferences</h3>
+            <ol>
+                <li><strong>Rank your general shift preference</strong> (1=most preferred, 3=least preferred)</li>
+                <li><strong>Browse the calendar below</strong> - Weekend shift days are highlighted</li>
+                <li><strong>Click shift times to select:</strong> First 12 clicks = Top preferences (green), Next 6 clicks = Bottom preferences (red)</li>
+                <li><strong>Click again to deselect</strong> a shift if you change your mind</li>
+                <li><strong>Submit your preferences</strong> before the deadline</li>
+            </ol>
+            <p><strong>Note:</strong> You'll be assigned exactly 1 shift over the 20-week period. Shifts on the same weekend won't be assigned together.</p>
+        </div>
+        
+        <div class="shift-type-prefs">
+            <h3>General Shift Type Preference</h3>
+            <div class="shift-type-item">
+                <label>Saturday 11 AM - 7 PM</label>
+                <select id="pref-saturday" class="shift-type-select">
+                    <option value="">-</option>
+                    <option value="1">1st</option>
+                    <option value="2">2nd</option>
+                    <option value="3">3rd</option>
+                </select>
+            </div>
+            <div class="shift-type-item">
+                <label>Sunday 8 AM - 4 PM</label>
+                <select id="pref-sunday-morning" class="shift-type-select">
+                    <option value="">-</option>
+                    <option value="1">1st</option>
+                    <option value="2">2nd</option>
+                    <option value="3">3rd</option>
+                </select>
+            </div>
+            <div class="shift-type-item">
+                <label>Sunday 3 PM - 10 PM</label>
+                <select id="pref-sunday-evening" class="shift-type-select">
+                    <option value="">-</option>
+                    <option value="1">1st</option>
+                    <option value="2">2nd</option>
+                    <option value="3">3rd</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="selection-summary">
+            <h3>Selection Summary</h3>
+            <div class="summary-stats">
+                <div class="stat-box top">
+                    <div class="stat-number" id="top-count">0</div>
+                    <div class="stat-label">Top 10 Selected (need 12)</div>
+                </div>
+                <div class="stat-box bottom">
+                    <div class="stat-number" id="bottom-count">0</div>
+                    <div class="stat-label">Bottom 5 Selected (need 6)</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="alert-container"></div>
+        
+        <div class="calendar-grid">
+            <h3>📅 Weekend Shift Calendar</h3>
+            <div id="shifts-container"></div>
+        </div>
+        
+        <button id="submit-btn" class="submit-btn">Submit Preferences</button>
+        {% endif %}
+    </div>
+    
+    <script>
+        const shifts = {{ shifts | tojson }};
+        const existingPrefs = {{ preferences.get(username, {}) | tojson }};
+        const isLocked = {{ is_locked | tojson }};
+        
+        let topPreferences = existingPrefs.top_10 || [];
+        let bottomPreferences = existingPrefs.bottom_5 || [];
+        
+        // Load existing shift type preferences
+        if (existingPrefs.shift_type_pref) {
+            document.getElementById('pref-saturday').value = existingPrefs.shift_type_pref.saturday || '';
+            document.getElementById('pref-sunday-morning').value = existingPrefs.shift_type_pref.sunday_morning || '';
+            document.getElementById('pref-sunday-evening').value = existingPrefs.shift_type_pref.sunday_evening || '';
+        }
+        
+        function renderShifts() {
+            const container = document.getElementById('shifts-container');
+            container.innerHTML = '';
+            
+            // Group shifts by month and organize into calendar
+            const shiftsByDate = {};
+            shifts.forEach(shift => {
+                const date = shift.date;
+                if (!shiftsByDate[date]) {
+                    shiftsByDate[date] = [];
+                }
+                shiftsByDate[date].push(shift);
+            });
+            
+            // Get all dates and group by month
+            const monthGroups = {};
+            Object.keys(shiftsByDate).sort().forEach(dateStr => {
+                const date = new Date(dateStr);
+                const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                if (!monthGroups[monthKey]) {
+                    monthGroups[monthKey] = {
+                        year: date.getFullYear(),
+                        month: date.getMonth(),
+                        dates: {}
+                    };
+                }
+                monthGroups[monthKey].dates[dateStr] = shiftsByDate[dateStr];
+            });
+            
+            // Render each month
+            Object.keys(monthGroups).sort().forEach(monthKey => {
+                const monthData = monthGroups[monthKey];
+                const monthSection = document.createElement('div');
+                monthSection.className = 'month-section';
+                
+                // Month header
+                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                                   'July', 'August', 'September', 'October', 'November', 'December'];
+                const monthName = monthNames[monthData.month];
+                
+                monthSection.innerHTML = `
+                    <div class="month-header">${monthName} ${monthData.year}</div>
+                    <table class="calendar-table">
+                        <tr class="calendar-header-row">
+                            <th class="calendar-header-cell">Sun</th>
+                            <th class="calendar-header-cell">Mon</th>
+                            <th class="calendar-header-cell">Tue</th>
+                            <th class="calendar-header-cell">Wed</th>
+                            <th class="calendar-header-cell">Thu</th>
+                            <th class="calendar-header-cell">Fri</th>
+                            <th class="calendar-header-cell">Sat</th>
+                        </tr>
+                    </table>
+                `;
+                
+                const table = monthSection.querySelector('table');
+                
+                // Build calendar grid
+                const firstDay = new Date(monthData.year, monthData.month, 1);
+                const lastDay = new Date(monthData.year, monthData.month + 1, 0);
+                const startingDayOfWeek = firstDay.getDay(); // 0 = Sunday
+                
+                let currentDate = 1;
+                let calendarComplete = false;
+                
+                while (!calendarComplete) {
+                    const weekRow = document.createElement('tr');
+                    
+                    for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+                        const cell = document.createElement('td');
+                        cell.className = 'calendar-day-cell';
+                        
+                        // Check if this cell should have a date
+                        if (currentDate === 1 && dayOfWeek < startingDayOfWeek) {
+                            // Empty cell before month starts
+                            cell.classList.add('empty');
+                        } else if (currentDate > lastDay.getDate()) {
+                            // Empty cell after month ends
+                            cell.classList.add('empty');
+                            calendarComplete = true;
+                        } else {
+                            // This cell has a date
+                            const dateStr = `${monthData.year}-${String(monthData.month + 1).padStart(2, '0')}-${String(currentDate).padStart(2, '0')}`;
+                            const shiftsForDate = monthData.dates[dateStr] || [];
+                            
+                            // Check if this is a weekend with shifts
+                            const isWeekendDay = shiftsForDate.length > 0;
+                            if (isWeekendDay) {
+                                cell.classList.add('weekend-day');
+                            }
+                            
+                            // Day number
+                            const dayNumber = document.createElement('div');
+                            dayNumber.className = 'day-number';
+                            dayNumber.textContent = currentDate;
+                            cell.appendChild(dayNumber);
+                            
+                            // Shifts for this day
+                            if (shiftsForDate.length > 0) {
+                                const dayShifts = document.createElement('div');
+                                dayShifts.className = 'day-shifts';
+                                
+                                shiftsForDate.forEach(shift => {
+                                    const shiftBtn = document.createElement('div');
+                                    shiftBtn.className = 'shift-button';
+                                    shiftBtn.dataset.shiftId = shift.id;
+                                    
+                                    const isTop = topPreferences.includes(shift.id);
+                                    const isBottom = bottomPreferences.includes(shift.id);
+                                    
+                                    if (isTop) {
+                                        shiftBtn.classList.add('top-selected');
+                                    } else if (isBottom) {
+                                        shiftBtn.classList.add('bottom-selected');
+                                    }
+                                    
+                                    // Shift time label
+                                    let timeLabel = '';
+                                    if (shift.time.includes('11:00 AM')) {
+                                        timeLabel = '11am-7pm';
+                                    } else if (shift.time.includes('8:00 AM')) {
+                                        timeLabel = '8am-4pm';
+                                    } else if (shift.time.includes('3:00 PM')) {
+                                        timeLabel = '3pm-10pm';
+                                    }
+                                    
+                                    let badge = '';
+                                    if (isTop) {
+                                        const rank = topPreferences.indexOf(shift.id) + 1;
+                                        badge = `<span class="shift-badge badge-top">#${rank}</span>`;
+                                    } else if (isBottom) {
+                                        const rank = bottomPreferences.indexOf(shift.id) + 1;
+                                        badge = `<span class="shift-badge badge-bottom">✗${rank}</span>`;
+                                    }
+                                    
+                                    shiftBtn.innerHTML = `${timeLabel}${badge}`;
+                                    
+                                    if (!isLocked) {
+                                        shiftBtn.addEventListener('click', () => toggleShift(shift.id));
+                                    }
+                                    
+                                    dayShifts.appendChild(shiftBtn);
+                                });
+                                
+                                cell.appendChild(dayShifts);
+                            }
+                            
+                            currentDate++;
+                        }
+                        
+                        weekRow.appendChild(cell);
+                    }
+                    
+                    table.appendChild(weekRow);
+                    
+                    if (currentDate > lastDay.getDate()) {
+                        calendarComplete = true;
+                    }
+                }
+                
+                container.appendChild(monthSection);
+            });
+            
+            updateCounts();
+        }
+        
+        function toggleShift(shiftId) {
+            const inTop = topPreferences.includes(shiftId);
+            const inBottom = bottomPreferences.includes(shiftId);
+            
+            if (inTop) {
+                // Remove from top
+                topPreferences = topPreferences.filter(id => id !== shiftId);
+            } else if (inBottom) {
+                // Remove from bottom
+                bottomPreferences = bottomPreferences.filter(id => id !== shiftId);
+            } else {
+                // Add to appropriate list
+                if (topPreferences.length < 12) {
+                    topPreferences.push(shiftId);
+                } else if (bottomPreferences.length < 6) {
+                    bottomPreferences.push(shiftId);
+                } else {
+                    showAlert('You have already selected 10 top preferences and 5 bottom preferences. Please remove one first.', 'danger');
+                    return;
+                }
+            }
+            
+            renderShifts();
+        }
+        
+        function updateCounts() {
+            document.getElementById('top-count').textContent = topPreferences.length;
+            document.getElementById('bottom-count').textContent = bottomPreferences.length;
+        }
+        
+        function showAlert(message, type) {
+            const container = document.getElementById('alert-container');
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+        
+        document.getElementById('submit-btn')?.addEventListener('click', async () => {
+            // Validate shift type preferences
+            const satPref = document.getElementById('pref-saturday').value;
+            const sunMornPref = document.getElementById('pref-sunday-morning').value;
+            const sunEvePref = document.getElementById('pref-sunday-evening').value;
+            
+            if (!satPref || !sunMornPref || !sunEvePref) {
+                showAlert('Please rank all three shift types.', 'danger');
+                return;
+            }
+            
+            // Check for duplicate rankings
+            const rankings = [satPref, sunMornPref, sunEvePref];
+            const uniqueRankings = new Set(rankings);
+            if (uniqueRankings.size !== 3) {
+                showAlert('Each shift type must have a different ranking (1, 2, 3).', 'danger');
+                return;
+            }
+            
+            // Validate selections
+            if (topPreferences.length !== 12) {
+                showAlert('Please select exactly 10 top preferences.', 'danger');
+                return;
+            }
+            
+            if (bottomPreferences.length !== 6) {
+                showAlert('Please select exactly 5 bottom preferences.', 'danger');
+                return;
+            }
+            
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+            
+            try {
+                const response = await fetch('/api/preferences', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        top_10: topPreferences,
+                        bottom_5: bottomPreferences,
+                        shift_type_pref: {
+                            saturday: satPref,
+                            sunday_morning: sunMornPref,
+                            sunday_evening: sunEvePref
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('✅ Preferences submitted successfully!', 'success');
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    showAlert(data.error || 'Failed to submit preferences.', 'danger');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit Preferences';
+                }
+            } catch (error) {
+                showAlert('An error occurred. Please try again.', 'danger');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Preferences';
+            }
+        });
+        
+        // Initial render
+        renderShifts();
+    </script>
+</body>
+</html>
