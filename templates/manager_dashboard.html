@@ -322,7 +322,7 @@
             <div class="action-buttons">
                 <button class="btn btn-success" onclick="allocateShifts()" 
                         {% if submitted_count < total_reporters %}disabled{% endif %}>
-                    Run Allocation Algorithm
+                    Assign Shifts
                 </button>
                 <button class="btn btn-warning" onclick="lockPreferences()">
                     {% if settings.is_locked %}Unlock{% else %}Lock{% endif %} Preferences
@@ -331,7 +331,7 @@
                     Download Backup (JSON)
                 </button>
                 <button class="btn btn-primary" onclick="exportExcel()">
-                    Export to Excel
+                    Download Schedule
                 </button>
                 <button class="btn btn-warning" onclick="populateTestData()">
                     🧪 Populate Test Data

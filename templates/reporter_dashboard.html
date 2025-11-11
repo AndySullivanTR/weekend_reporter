@@ -401,7 +401,7 @@
             <ol>
                 <li><strong>Rank your general shift preference</strong> (1=most preferred, 3=least preferred)</li>
                 <li><strong>Browse the calendar below</strong> - Weekend shift days are highlighted</li>
-                <li><strong>Click shift times to select:</strong> First 12 clicks = Top preferences (green), Next 6 clicks = Bottom preferences (red)</li>
+                <li><strong>Click shift times to select:</strong> First 10 clicks = Top preferences (green), Next 5 clicks = Bottom preferences (red)</li>
                 <li><strong>Click again to deselect</strong> a shift if you change your mind</li>
                 <li><strong>Submit your preferences</strong> before the deadline</li>
             </ol>
@@ -444,11 +444,11 @@
             <div class="summary-stats">
                 <div class="stat-box top">
                     <div class="stat-number" id="top-count">0</div>
-                    <div class="stat-label">Top 10 Selected (need 12)</div>
+                    <div class="stat-label">Top 10 Selected (need 10)</div>
                 </div>
                 <div class="stat-box bottom">
                     <div class="stat-number" id="bottom-count">0</div>
-                    <div class="stat-label">Bottom 5 Selected (need 6)</div>
+                    <div class="stat-label">Bottom 5 Selected (need 5)</div>
                 </div>
             </div>
         </div>
@@ -657,9 +657,9 @@
                 bottomPreferences = bottomPreferences.filter(id => id !== shiftId);
             } else {
                 // Add to appropriate list
-                if (topPreferences.length < 12) {
+                if (topPreferences.length < 10) {
                     topPreferences.push(shiftId);
-                } else if (bottomPreferences.length < 6) {
+                } else if (bottomPreferences.length < 5) {
                     bottomPreferences.push(shiftId);
                 } else {
                     showAlert('You have already selected 10 top preferences and 5 bottom preferences. Please remove one first.', 'danger');
@@ -703,12 +703,12 @@
             }
             
             // Validate selections
-            if (topPreferences.length !== 12) {
+            if (topPreferences.length !== 10) {
                 showAlert('Please select exactly 10 top preferences.', 'danger');
                 return;
             }
             
-            if (bottomPreferences.length !== 6) {
+            if (bottomPreferences.length !== 5) {
                 showAlert('Please select exactly 5 bottom preferences.', 'danger');
                 return;
             }
