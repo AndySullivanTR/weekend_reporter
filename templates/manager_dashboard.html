@@ -364,14 +364,14 @@
                             <td>{{ reporter.name }}</td>
                             <td>
                                 {% if preferences.get(username) and preferences[username].get('top_10') %}
-                                    {{ preferences[username].top_10|length }}/12
+                                    {{ preferences[username].top_10|length }}/10
                                 {% else %}
                                     0/12
                                 {% endif %}
                             </td>
                             <td>
                                 {% if preferences.get(username) and preferences[username].get('bottom_5') %}
-                                    {{ preferences[username].bottom_5|length }}/6
+                                    {{ preferences[username].bottom_5|length }}/5
                                 {% else %}
                                     0/6
                                 {% endif %}
