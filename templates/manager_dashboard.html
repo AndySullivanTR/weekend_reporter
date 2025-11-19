@@ -288,7 +288,10 @@
             <div>
                 <h1>Manager Dashboard - Weekend Reporter Shifts</h1>
             </div>
-            <a href="/logout" class="logout-btn">Logout</a>
+            <div>
+                <button onclick="openPasswordModal()" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">Change Password</button>
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
         </header>
         
         <div id="alert-container"></div>
@@ -303,8 +306,8 @@
                 <div class="stat-label">Preferences Submitted</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">60</div>
-                <div class="stat-label">Total Shifts (20 weekends)</div>
+                <div class="stat-number">63</div>
+                <div class="stat-label">Total Shifts (21 weekends)</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{% if assignments %}{{ assignments|length }}{% else %}0{% endif %}</div>
@@ -320,8 +323,7 @@
                 <button class="btn btn-primary" onclick="updateDeadline()">Update Deadline</button>
             </div>
             <div class="action-buttons">
-                <button class="btn btn-success" onclick="allocateShifts()" 
-                        {% if submitted_count < total_reporters %}disabled{% endif %}>
+                <button class="btn btn-success" onclick="allocateShifts()">
                     Assign Shifts
                 </button>
                 <button class="btn btn-warning" onclick="lockPreferences()">
@@ -337,11 +339,7 @@
                     🧪 Populate Test Data
                 </button>
             </div>
-            {% if submitted_count < total_reporters %}
-            <div style="margin-top: 15px; color: #856404;">
-                ⚠️ Cannot allocate shifts until all reporters have submitted preferences.
-            </div>
-            {% endif %}
+
         </div>
         
         <div class="submissions-list">
@@ -366,14 +364,14 @@
                                 {% if preferences.get(username) and preferences[username].get('top_10') %}
                                     {{ preferences[username].top_10|length }}/10
                                 {% else %}
-                                    0/12
+                                    0/10
                                 {% endif %}
                             </td>
                             <td>
                                 {% if preferences.get(username) and preferences[username].get('bottom_5') %}
                                     {{ preferences[username].bottom_5|length }}/5
                                 {% else %}
-                                    0/6
+                                    0/5
                                 {% endif %}
                             </td>
                             <td>
@@ -553,7 +551,7 @@
         }
         
         async function populateTestData() {
-            if (!confirm('This will populate random preferences for all 30 reporters. Continue?')) {
+            if (!confirm('This will populate random preferences for all 121 reporters. Continue?')) {
                 return;
             }
             
@@ -576,6 +574,86 @@
                 showAlert('An error occurred.', 'danger');
             }
         }
+        
+        function openPasswordModal() {
+            document.getElementById('change-password-modal').style.display = 'flex';
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+            document.getElementById('confirm-password').value = '';
+        }
+        
+        function closePasswordModal() {
+            document.getElementById('change-password-modal').style.display = 'none';
+        }
+        
+        async function submitPasswordChange() {
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                alert('⚠️ Please fill in all fields.');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                alert('⚠️ New password must be at least 6 characters.');
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                alert('⚠️ New passwords do not match.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ Password changed successfully!');
+                    closePasswordModal();
+                } else {
+                    alert('❌ ' + (data.error || 'Failed to change password.'));
+                }
+            } catch (error) {
+                alert('❌ An error occurred: ' + error);
+            }
+        }
     </script>
+
+    <!-- Password Change Modal -->
+    <div id="change-password-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 10px; max-width: 400px; width: 90%;">
+            <h2 style="margin-bottom: 20px; color: #333;">Change Password</h2>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #666;">Current Password:</label>
+                <input type="password" id="current-password" style="width: 100%; padding: 8px; border: 2px solid #e1e4e8; border-radius: 5px; font-size: 14px;">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #666;">New Password (min 6 characters):</label>
+                <input type="password" id="new-password" style="width: 100%; padding: 8px; border: 2px solid #e1e4e8; border-radius: 5px; font-size: 14px;">
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; color: #666;">Confirm New Password:</label>
+                <input type="password" id="confirm-password" style="width: 100%; padding: 8px; border: 2px solid #e1e4e8; border-radius: 5px; font-size: 14px;">
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="submitPasswordChange()" style="flex: 1; padding: 12px; background: #FF6B35; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">Change Password</button>
+                <button onclick="closePasswordModal()" style="flex: 1; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>

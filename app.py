@@ -26,14 +26,14 @@ PREFERENCES_FILE = os.path.join(DATA_DIR, 'preferences.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 ASSIGNMENTS_FILE = os.path.join(DATA_DIR, 'assignments.json')
 
-# Generate 60 weekend shifts (20 weekends starting Dec 13, 2025)
+# Generate 63 weekend shifts (21 weekends starting Dec 13, 2025)
 # Each shift has 2 slots for reporters
 def generate_shifts():
     shifts = []
     start_date = datetime(2025, 12, 13)  # Saturday Dec 13, 2025
     shift_id = 0
     
-    for week in range(20):
+    for week in range(21):
         saturday = start_date + timedelta(weeks=week)
         sunday = saturday + timedelta(days=1)
         
@@ -293,14 +293,24 @@ def allocate_shifts():
     # Get list of non-manager reporters
     reporter_list = [user for user, rep in reporters_data.items() if not rep.get('is_manager')]
     
-    # Validate all reporters have submitted preferences
+    # Separate reporters into those WITH and WITHOUT preferences
+    reporters_with_prefs = []
+    reporters_without_prefs = []
+    warnings = []
+    
     for rep in reporter_list:
-        if rep not in preferences:
-            return jsonify({'error': f'{rep} has not submitted preferences'}), 400
-        
-        prefs = preferences[rep]
-        if len(prefs.get('top_10', [])) != 10 or len(prefs.get('bottom_5', [])) != 5:
-            return jsonify({'error': f'{rep} has incomplete preferences'}), 400
+        if rep in preferences:
+            prefs = preferences[rep]
+            if len(prefs.get('top_10', [])) == 10 and len(prefs.get('bottom_5', [])) == 5:
+                reporters_with_prefs.append(rep)
+            else:
+                reporters_without_prefs.append(rep)
+                rep_name = reporters_data[rep]['name']
+                warnings.append(f"{rep_name} has incomplete preferences - will be randomly assigned")
+        else:
+            reporters_without_prefs.append(rep)
+            rep_name = reporters_data[rep]['name']
+            warnings.append(f"{rep_name} did not submit preferences - will be randomly assigned")
     
     # Initialize assignments
     assignments = {rep: [] for rep in reporter_list}
@@ -309,9 +319,9 @@ def allocate_shifts():
     # Set random seed for reproducibility
     random.seed(42)
     
-    # SINGLE PHASE: Allocate one shift per reporter
-    print("\n=== REPORTER SHIFT ALLOCATION ===")
-    shuffled_reporters = reporter_list.copy()
+    # PHASE 1: Allocate for reporters WITH preferences
+    print("\n=== REPORTER SHIFT ALLOCATION (WITH PREFERENCES) ===")
+    shuffled_reporters = reporters_with_prefs.copy()
     random.shuffle(shuffled_reporters)
     
     for rep in shuffled_reporters:
@@ -381,6 +391,36 @@ def allocate_shifts():
         if not assigned:
             print(f"✗ {rep:15} → Could not assign shift")
     
+    # PHASE 2: Random allocation for reporters WITHOUT preferences
+    if reporters_without_prefs:
+        print("\n=== RANDOM ALLOCATION (NO PREFERENCES) ===")
+        
+        # Create pool of available shifts
+        available_shifts = []
+        for shift in SHIFTS:
+            shift_id = shift['id']
+            filled = len(shift_assignments[shift_id])
+            capacity = shift['slots']
+            for _ in range(capacity - filled):
+                available_shifts.append(shift_id)
+        
+        random.shuffle(available_shifts)
+        
+        # Assign to reporters without preferences
+        shift_index = 0
+        for rep in reporters_without_prefs:
+            if shift_index >= len(available_shifts):
+                print(f"✗ {rep:15} → No shifts remaining")
+                warnings.append(f"{reporters_data[rep]['name']} could not be assigned - no capacity remaining")
+                break
+            
+            shift_id = available_shifts[shift_index]
+            shift_index += 1
+            
+            assignments[rep].append(shift_id)
+            shift_assignments[shift_id].append(rep)
+            print(f"🎲 {rep:15} → Shift {shift_id:2} (random assignment)")
+    
     # Save assignments
     save_json(ASSIGNMENTS_FILE, assignments)
     
@@ -392,7 +432,10 @@ def allocate_shifts():
     return jsonify({
         'success': True,
         'assignments': assignments,
-        'shift_assignments': shift_assignments
+        'shift_assignments': shift_assignments,
+        'warnings': warnings,
+        'reporters_with_prefs': len(reporters_with_prefs),
+        'reporters_without_prefs': len(reporters_without_prefs)
     })
 
 @app.route('/api/backup')
@@ -618,6 +661,39 @@ def export_excel():
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    """Allow users to change their password"""
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    username = session['username']
+    data = request.json
+    
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    
+    if not current_password or not new_password:
+        return jsonify({'error': 'Current and new password required'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters'}), 400
+    
+    reporters = get_reporters()
+    
+    # Verify current password
+    if username not in reporters:
+        return jsonify({'error': 'User not found'}), 404
+    
+    if not check_password_hash(reporters[username]['password'], current_password):
+        return jsonify({'error': 'Current password is incorrect'}), 401
+    
+    # Update password
+    reporters[username]['password'] = generate_password_hash(new_password)
+    save_json(REPORTERS_FILE, reporters)
+    
+    return jsonify({'success': True, 'message': 'Password changed successfully'})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

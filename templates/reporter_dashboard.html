@@ -369,6 +369,7 @@
                 <h1>Weekend Reporter Shifts</h1>
                 <div class="user-info">Logged in as: {{ username }}</div>
             </div>
+            <button onclick="openPasswordModal()" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">Change Password</button>
             <a href="/logout" class="logout-btn">Logout</a>
         </header>
         
@@ -690,7 +691,7 @@
             const sunEvePref = document.getElementById('pref-sunday-evening').value;
             
             if (!satPref || !sunMornPref || !sunEvePref) {
-                showAlert('Please rank all three shift types.', 'danger');
+                alert('⚠️ Please rank all three shift types (Saturday, Sunday Morning, Sunday Evening) before submitting.');
                 return;
             }
             
@@ -698,18 +699,18 @@
             const rankings = [satPref, sunMornPref, sunEvePref];
             const uniqueRankings = new Set(rankings);
             if (uniqueRankings.size !== 3) {
-                showAlert('Each shift type must have a different ranking (1, 2, 3).', 'danger');
+                alert('⚠️ Each shift type must have a different ranking. Please use 1, 2, and 3 (one for each shift type).');
                 return;
             }
             
             // Validate selections
             if (topPreferences.length !== 10) {
-                showAlert('Please select exactly 10 top preferences.', 'danger');
+                alert('⚠️ Please select exactly 10 top preferences. You currently have ' + topPreferences.length + ' selected.');
                 return;
             }
             
             if (bottomPreferences.length !== 5) {
-                showAlert('Please select exactly 5 bottom preferences.', 'danger');
+                alert('⚠️ Please select exactly 5 bottom preferences. You currently have ' + bottomPreferences.length + ' selected.');
                 return;
             }
             
@@ -755,6 +756,87 @@
         
         // Initial render
         renderShifts();
+
+        function openPasswordModal() {
+            document.getElementById('change-password-modal').style.display = 'flex';
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+            document.getElementById('confirm-password').value = '';
+        }
+        
+        function closePasswordModal() {
+            document.getElementById('change-password-modal').style.display = 'none';
+        }
+        
+        async function submitPasswordChange() {
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                alert('⚠️ Please fill in all fields.');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                alert('⚠️ New password must be at least 6 characters.');
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                alert('⚠️ New passwords do not match.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ Password changed successfully!');
+                    closePasswordModal();
+                } else {
+                    alert('❌ ' + (data.error || 'Failed to change password.'));
+                }
+            } catch (error) {
+                alert('❌ An error occurred: ' + error);
+            }
+        }
+        
     </script>
+
+    <!-- Password Change Modal -->
+    <div id="change-password-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 10px; max-width: 400px; width: 90%;">
+            <h2 style="margin-bottom: 20px; color: #333;">Change Password</h2>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #666;">Current Password:</label>
+                <input type="password" id="current-password" style="width: 100%; padding: 8px; border: 2px solid #e1e4e8; border-radius: 5px; font-size: 14px;">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #666;">New Password (min 6 characters):</label>
+                <input type="password" id="new-password" style="width: 100%; padding: 8px; border: 2px solid #e1e4e8; border-radius: 5px; font-size: 14px;">
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; color: #666;">Confirm New Password:</label>
+                <input type="password" id="confirm-password" style="width: 100%; padding: 8px; border: 2px solid #e1e4e8; border-radius: 5px; font-size: 14px;">
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="submitPasswordChange()" style="flex: 1; padding: 12px; background: #FF6B35; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">Change Password</button>
+                <button onclick="closePasswordModal()" style="flex: 1; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
