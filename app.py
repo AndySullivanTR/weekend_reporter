@@ -349,32 +349,56 @@ def allocate_shifts():
     random.seed(42)
     
     # PHASE 1: Allocate for reporters WITH preferences
+    # Strategy: Fill weeks 1-20 first (shifts 0-59), then week 21 (shifts 60-62)
     print("\n=== REPORTER SHIFT ALLOCATION (WITH PREFERENCES) ===")
+    print("Strategy: Prioritizing weeks 1-20 (shifts 0-59) to be fully filled")
+    
     shuffled_reporters = reporters_with_prefs.copy()
     random.shuffle(shuffled_reporters)
     
+    # Assign one shift to each reporter
     for rep in shuffled_reporters:
         prefs = preferences[rep]
         top_10 = prefs['top_10']
         bottom_5 = prefs['bottom_5']
         
-        # Try to assign from top 10 preferences
+        # Try to assign from top 10 preferences, prioritizing weeks 1-20
         assigned = False
+        
+        # First try: top 10 preferences that are in weeks 1-20 (shift IDs 0-59)
         for shift_id in top_10:
-            # Skip if shift is full (2 slots)
+            if shift_id >= 60:  # Skip week 21 for now
+                continue
+            
             shift = next(s for s in SHIFTS if s['id'] == shift_id)
             if len(shift_assignments[shift_id]) >= shift['slots']:
                 continue
             
-            # Assign shift
             assignments[rep].append(shift_id)
             shift_assignments[shift_id].append(rep)
             assigned = True
             rank = top_10.index(shift_id) + 1
-            print(f"✓ {rep:15} → Shift {shift_id:2} (preference #{rank})")
+            print(f"✓ {rep:30} → Shift {shift_id:2} (week {shift['week']}, preference #{rank})")
             break
         
-        # If couldn't assign from top 10, try non-bottom-5 shifts
+        # Second try: top 10 preferences in week 21 if nothing in weeks 1-20
+        if not assigned:
+            for shift_id in top_10:
+                if shift_id < 60:  # Already tried these
+                    continue
+                
+                shift = next(s for s in SHIFTS if s['id'] == shift_id)
+                if len(shift_assignments[shift_id]) >= shift['slots']:
+                    continue
+                
+                assignments[rep].append(shift_id)
+                shift_assignments[shift_id].append(rep)
+                assigned = True
+                rank = top_10.index(shift_id) + 1
+                print(f"✓ {rep:30} → Shift {shift_id:2} (week 21, preference #{rank})")
+                break
+        
+        # Third try: non-bottom-5 shifts in weeks 1-20
         if not assigned:
             shift_type_pref = prefs.get('shift_type_pref', {})
             sorted_types = sorted(shift_type_pref.items(), key=lambda x: x[1])
@@ -383,15 +407,14 @@ def allocate_shifts():
                 for shift in SHIFTS:
                     shift_id = shift['id']
                     
-                    # Skip if in bottom 5
-                    if shift_id in bottom_5:
+                    # Prioritize weeks 1-20
+                    if shift_id >= 60:
                         continue
                     
-                    # Skip if already in top 10 (already tried these)
-                    if shift_id in top_10:
+                    if shift_id in bottom_5 or shift_id in top_10:
                         continue
                     
-                    # Check if matches shift type
+                    # Check shift type match
                     shift_matches = False
                     if shift_type == 'saturday' and shift['day'] == 'Saturday':
                         shift_matches = True
@@ -403,52 +426,61 @@ def allocate_shifts():
                     if not shift_matches:
                         continue
                     
-                    # Skip if shift is full
                     if len(shift_assignments[shift_id]) >= shift['slots']:
                         continue
                     
-                    # Assign shift
                     assignments[rep].append(shift_id)
                     shift_assignments[shift_id].append(rep)
                     assigned = True
-                    print(f"⚠ {rep:15} → Shift {shift_id:2} (backup assignment, not in top 10)")
+                    print(f"⚠ {rep:30} → Shift {shift_id:2} (week {shift['week']}, backup assignment)")
                     break
                 
                 if assigned:
                     break
         
         if not assigned:
-            print(f"✗ {rep:15} → Could not assign shift")
+            print(f"✗ {rep:30} → Could not assign shift")
     
     # PHASE 2: Random allocation for reporters WITHOUT preferences
     if reporters_without_prefs:
         print("\n=== RANDOM ALLOCATION (NO PREFERENCES) ===")
         
-        # Create pool of available shifts
-        available_shifts = []
-        for shift in SHIFTS:
-            shift_id = shift['id']
-            filled = len(shift_assignments[shift_id])
-            capacity = shift['slots']
-            for _ in range(capacity - filled):
-                available_shifts.append(shift_id)
-        
-        random.shuffle(available_shifts)
-        
-        # Assign to reporters without preferences
-        shift_index = 0
+        # Assign 1 shift to each reporter, prioritizing weeks 1-20
         for rep in reporters_without_prefs:
-            if shift_index >= len(available_shifts):
-                print(f"✗ {rep:15} → No shifts remaining")
+            # Create pool of available shifts, prioritizing weeks 1-20 (shifts 0-59)
+            available_weeks_1_20 = []
+            available_week_21 = []
+            
+            for shift in SHIFTS:
+                shift_id = shift['id']
+                filled = len(shift_assignments[shift_id])
+                capacity = shift['slots']
+                
+                if filled < capacity:
+                    if shift_id < 60:  # Weeks 1-20
+                        available_weeks_1_20.append(shift_id)
+                    else:  # Week 21
+                        available_week_21.append(shift_id)
+            
+            # Try weeks 1-20 first
+            if available_weeks_1_20:
+                random.shuffle(available_weeks_1_20)
+                shift_id = available_weeks_1_20[0]
+                shift = next(s for s in SHIFTS if s['id'] == shift_id)
+                assignments[rep].append(shift_id)
+                shift_assignments[shift_id].append(rep)
+                print(f"🎲 {rep:30} → Shift {shift_id:2} (week {shift['week']}, random)")
+            elif available_week_21:
+                # Only use week 21 if weeks 1-20 are full
+                random.shuffle(available_week_21)
+                shift_id = available_week_21[0]
+                shift = next(s for s in SHIFTS if s['id'] == shift_id)
+                assignments[rep].append(shift_id)
+                shift_assignments[shift_id].append(rep)
+                print(f"🎲 {rep:30} → Shift {shift_id:2} (week 21, random)")
+            else:
+                print(f"✗ {rep:30} → No shifts available")
                 warnings.append(f"{reporters_data[rep]['name']} could not be assigned - no capacity remaining")
-                break
-            
-            shift_id = available_shifts[shift_index]
-            shift_index += 1
-            
-            assignments[rep].append(shift_id)
-            shift_assignments[shift_id].append(rep)
-            print(f"🎲 {rep:15} → Shift {shift_id:2} (random assignment)")
     
     # Save assignments
     save_json(ASSIGNMENTS_FILE, assignments)

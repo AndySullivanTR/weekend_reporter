@@ -306,8 +306,8 @@
                 <div class="stat-label">Preferences Submitted</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">63</div>
-                <div class="stat-label">Total Shifts (21 weekends)</div>
+                <div class="stat-number">121</div>
+                <div class="stat-label">Total Shifts (20 weeks fully filled + week 21 partial)</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{% if assignments %}{{ assignments|length }}{% else %}0{% endif %}</div>
@@ -326,17 +326,11 @@
                 <button class="btn btn-success" onclick="allocateShifts()">
                     Assign Shifts
                 </button>
-                <button class="btn btn-warning" onclick="lockPreferences()">
-                    {% if settings.is_locked %}Unlock{% else %}Lock{% endif %} Preferences
-                </button>
-                <button class="btn btn-primary" onclick="downloadBackup()">
-                    Download Backup (JSON)
-                </button>
                 <button class="btn btn-primary" onclick="exportExcel()">
                     Download Schedule
                 </button>
-                <button class="btn btn-warning" onclick="populateTestData()">
-                    🧪 Populate Test Data
+                <button class="btn btn-warning" onclick="lockPreferences()">
+                    {% if settings.is_locked %}Unlock{% else %}Lock{% endif %} Preferences
                 </button>
             </div>
 
