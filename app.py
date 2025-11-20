@@ -136,6 +136,32 @@ def get_settings():
 def get_assignments():
     return load_json(ASSIGNMENTS_FILE)
 
+def format_deadline(iso_datetime_str):
+    """Format ISO datetime to readable format: 'Nov. 27, 2025 2:37 pm ET'"""
+    dt = datetime.fromisoformat(iso_datetime_str)
+    # Format: Nov. 27, 2025 2:37 pm ET
+    month = dt.strftime('%b')  # Nov
+    day = dt.day  # 27
+    year = dt.year  # 2025
+    hour = dt.hour
+    minute = dt.minute
+    
+    # Convert to 12-hour format with am/pm
+    if hour == 0:
+        hour_12 = 12
+        am_pm = 'am'
+    elif hour < 12:
+        hour_12 = hour
+        am_pm = 'am'
+    elif hour == 12:
+        hour_12 = 12
+        am_pm = 'pm'
+    else:
+        hour_12 = hour - 12
+        am_pm = 'pm'
+    
+    return f"{month}. {day}, {year} {hour_12}:{minute:02d} {am_pm} ET"
+
 # Routes
 @app.route('/')
 def index():
@@ -210,12 +236,15 @@ def reporter_dashboard():
     deadline = datetime.fromisoformat(settings['deadline'])
     is_locked = settings.get('is_locked', False) or datetime.now() > deadline
     
+    # Format deadline for display
+    formatted_deadline = format_deadline(settings['deadline'])
+    
     return render_template('reporter_dashboard.html',
                          username=username,
                          shifts=SHIFTS,
                          preferences=user_prefs,
                          assignments=user_assignments,
-                         deadline=settings['deadline'],
+                         deadline=formatted_deadline,
                          is_locked=is_locked)
 
 @app.route('/api/preferences', methods=['GET', 'POST'])
