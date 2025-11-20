@@ -921,5 +921,31 @@ def reload_reporters_from_csv():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/reset-data', methods=['POST'])
+def reset_data():
+    """Reset preferences and assignments (ADMIN ONLY - for testing)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        # Clear preferences
+        save_json(PREFERENCES_FILE, {})
+        
+        # Clear assignments
+        save_json(ASSIGNMENTS_FILE, {})
+        
+        # Unlock preferences
+        settings = get_settings()
+        settings['is_locked'] = False
+        save_json(SETTINGS_FILE, settings)
+        
+        return jsonify({
+            'success': True,
+            'message': 'All preferences and assignments cleared. System unlocked.'
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
