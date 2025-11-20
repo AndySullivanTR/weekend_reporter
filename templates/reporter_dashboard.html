@@ -739,9 +739,8 @@
                 
                 if (data.success) {
                     showAlert('✅ Preferences submitted successfully!', 'success');
-                    setTimeout(() => {
-                        location.reload();
-                    }, 2000);
+                    alert('✅ SUCCESS! Your shift preferences have been submitted successfully.');
+                    location.reload();
                 } else {
                     showAlert(data.error || 'Failed to submit preferences.', 'danger');
                     submitBtn.disabled = false;
