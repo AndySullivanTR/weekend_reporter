@@ -21,6 +21,9 @@ app.secret_key = 'weekend-reporter-shifts-secret-key-2025'
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
+BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
 REPORTERS_FILE = os.path.join(DATA_DIR, 'reporters.json')
 PREFERENCES_FILE = os.path.join(DATA_DIR, 'preferences.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
@@ -135,6 +138,33 @@ def get_settings():
 
 def get_assignments():
     return load_json(ASSIGNMENTS_FILE)
+
+def create_auto_backup():
+    """Create an automatic backup of all data files"""
+    try:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_data = {
+            'reporters': get_reporters(),
+            'preferences': get_preferences(),
+            'settings': get_settings(),
+            'assignments': get_assignments(),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        backup_file = os.path.join(BACKUP_DIR, f'auto_backup_{timestamp}.json')
+        with open(backup_file, 'w') as f:
+            json.dump(backup_data, f, indent=2)
+        
+        # Keep only last 30 backups to save space
+        backup_files = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('auto_backup_')])
+        if len(backup_files) > 30:
+            for old_backup in backup_files[:-30]:
+                os.remove(os.path.join(BACKUP_DIR, old_backup))
+        
+        return True
+    except Exception as e:
+        print(f"Auto-backup failed: {e}")
+        return False
 
 def format_deadline(iso_datetime_str):
     """Format ISO datetime to readable format: 'Nov. 27, 2025 2:37 pm ET'"""
@@ -282,6 +312,10 @@ def manage_preferences():
             'shift_type_pref': data['shift_type_pref']
         }
         save_json(PREFERENCES_FILE, preferences)
+        
+        # Create auto-backup after preference submission
+        create_auto_backup()
+        
         return jsonify({'success': True})
     
     # GET
@@ -315,6 +349,9 @@ def manage_settings():
 def allocate_shifts():
     if not session.get('is_manager'):
         return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Create backup before allocation
+    create_auto_backup()
     
     preferences = get_preferences()
     reporters_data = get_reporters()
@@ -942,6 +979,49 @@ def reset_data():
         return jsonify({
             'success': True,
             'message': 'All preferences and assignments cleared. System unlocked.'
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/create-backup', methods=['POST'])
+def trigger_backup():
+    """Manually trigger a backup (ADMIN ONLY)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    success = create_auto_backup()
+    if success:
+        return jsonify({
+            'success': True,
+            'message': 'Backup created successfully'
+        })
+    else:
+        return jsonify({'error': 'Backup failed'}), 500
+
+@app.route('/api/list-backups')
+def list_backups():
+    """List all available backups (ADMIN ONLY)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        backup_files = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('auto_backup_')], reverse=True)
+        backups = []
+        
+        for filename in backup_files[:30]:  # Show last 30
+            filepath = os.path.join(BACKUP_DIR, filename)
+            stat = os.stat(filepath)
+            backups.append({
+                'filename': filename,
+                'size': stat.st_size,
+                'created': datetime.fromtimestamp(stat.st_mtime).isoformat()
+            })
+        
+        return jsonify({
+            'success': True,
+            'backups': backups,
+            'total': len(backup_files)
         })
     
     except Exception as e:
