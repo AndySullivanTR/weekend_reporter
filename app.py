@@ -695,19 +695,138 @@ def change_password():
     
     return jsonify({'success': True, 'message': 'Password changed successfully'})
 
+# Reporter credentials data (embedded to avoid CSV file dependency)
+REPORTER_CREDENTIALS = [
+    {"name": "Aboulenein, Ahmed", "username": "ahmed.aboulenein", "password": "isrcoi"},
+    {"name": "Ahmed, Saqib", "username": "saqib.ahmed", "password": "VtaIrc"},
+    {"name": "Alleyne-Morris, Shawana", "username": "shawana.alleyne-morris", "password": "505eE3"},
+    {"name": "Anand, Nupur", "username": "nupur.anand", "password": "OGbF9J"},
+    {"name": "Azhar, Saeed", "username": "saeed.azhar", "password": "m7Is0j"},
+    {"name": "Baertlein, Lisa P.", "username": "lisa.baertlein", "password": "3Ju3Wb"},
+    {"name": "Banco, Erin", "username": "erin.banco", "password": "wMkhw0"},
+    {"name": "Barbuscia, Davide", "username": "davide.barbuscia", "password": "SOumy4"},
+    {"name": "Bautzer, Tatiana", "username": "tatiana.bautzer", "password": "x8ZQRd"},
+    {"name": "Bensinger, Greg", "username": "greg.bensinger", "password": "OxzLbT"},
+    {"name": "Binnie, Isla", "username": "isla.binnie", "password": "MxO3sq"},
+    {"name": "Brettell, Karen J.", "username": "karen.brettell", "password": "5Wfwcu"},
+    {"name": "Brittain, Blake", "username": "blake.brittain", "password": "83RomE"},
+    {"name": "Brown, Nicholas P.", "username": "nicholas.p.brown", "password": "eJTLFQ"},
+    {"name": "Cai, Kenrick", "username": "kenrick.cai", "password": "H66q4i"},
+    {"name": "Campos, Rodrigo", "username": "rodrigo.campos", "password": "gXTzhk"},
+    {"name": "Carew, Sinead M.", "username": "sinead.carew", "password": "QGAiY5"},
+    {"name": "Catchpole, Dan", "username": "dan.catchpole", "password": "Cgcp7n"},
+    {"name": "Cavale, Siddharth", "username": "siddharth.cavale", "password": "ncz2NL"},
+    {"name": "Chavez, Gertrude", "username": "gertrude.chavez", "password": "NOWLwL"},
+    {"name": "Cherney, Max A.", "username": "max.cherney", "password": "HEP1Ay"},
+    {"name": "Chmielewski, Dawn C.", "username": "dawn.chmielewski", "password": "sFjwWj"},
+    {"name": "Chung, Andrew", "username": "andrew.chung", "password": "sulpg2"},
+    {"name": "Cohen, Luc", "username": "luc.cohen", "password": "tLZt8t"},
+    {"name": "Conlin, Michelle", "username": "michelle.conlin", "password": "Ne29uB"},
+    {"name": "Cooke, Kristina R.", "username": "kristina.cooke", "password": "O2nUzm"},
+    {"name": "Culp, Stephen R.", "username": "stephen.culp", "password": "vyOW3V"},
+    {"name": "Cunningham, Waylon", "username": "waylon.cunningham", "password": "5eS7RJ"},
+    {"name": "Dang, Sheila", "username": "sheila.dang", "password": "AmxX4u"},
+    {"name": "Dastin, Jeffrey", "username": "jeffrey.dastin", "password": "mAnP4c"},
+    {"name": "Delevingne, Lawrence", "username": "lawrence.delevingne", "password": "QAoEDS"},
+    {"name": "Derby, Michael", "username": "michael.derby", "password": "AV2MnB"},
+    {"name": "DiNapoli, Jessica", "username": "jessica.dinapoli", "password": "N60hyD"},
+    {"name": "DiSavino, Scott P.", "username": "scott.disavino", "password": "XAIeq9"},
+    {"name": "Douglas, Leah", "username": "leah.douglas", "password": "023vja"},
+    {"name": "Eckert, Nora", "username": "nora.eckert", "password": "nPIwnl"},
+    {"name": "Erman, Michael D.", "username": "michael.erman", "password": "gPrCnL"},
+    {"name": "Flowers, Bianca", "username": "bianca.flowers", "password": "fxq9qp"},
+    {"name": "Freifeld, Karen", "username": "karen.freifeld", "password": "dLo9IV"},
+    {"name": "French, David J.", "username": "davidj.french", "password": "nI9MDy"},
+    {"name": "Gardner, Timothy", "username": "timothy.gardner", "password": "U70mDI"},
+    {"name": "Gillison, Douglas", "username": "douglas.gillison", "password": "2idb2J"},
+    {"name": "Godoy, Jody", "username": "jody.godoy", "password": "UrU0eP"},
+    {"name": "Groom, Nichola L.", "username": "nichola.groom", "password": "vAesgS"},
+    {"name": "Hall, Kalea", "username": "kalea.hall", "password": "4weehZ"},
+    {"name": "Herbst, Svea A.", "username": "svea.herbst", "password": "rTV2O8"},
+    {"name": "Hickman, Renee", "username": "renee.hickman", "password": "YqKDNk"},
+    {"name": "Hood-Nuño, David", "username": "david.hood", "password": "ZWcmbx"},
+    {"name": "Hu, Krystal", "username": "krystal.hu", "password": "YL4uog"},
+    {"name": "Huffstutter, PJ", "username": "pj.huffstutter", "password": "m4I6Ea"},
+    {"name": "Ingwersen, Julie R.", "username": "julie.ingwersen", "password": "vebx88"},
+    {"name": "Jao, Nicole", "username": "nicole.jao", "password": "W6RcMP"},
+    {"name": "Jeans, David", "username": "david.jeans", "password": "SBdIrS"},
+    {"name": "Jones, Diana", "username": "diana.jones2", "password": "KgeMBZ"},
+    {"name": "Kearney, Laila", "username": "laila.kearney", "password": "lerOfL"},
+    {"name": "Kerber, Ross J.", "username": "ross.kerber", "password": "em8rZp"},
+    {"name": "Khan, Shariq A.", "username": "shariq.khan", "password": "X8B7o1"},
+    {"name": "Kirkham, Chris", "username": "chris.kirkham", "password": "0qxsfs"},
+    {"name": "Knauth, Dietrich", "username": "dietrich.knauth", "password": "TrdWZ8"},
+    {"name": "Koh, Gui Qing", "username": "guiqing.koh", "password": "8zE47J"},
+    {"name": "Krauskopf, Lewis S.", "username": "lewis.krauskopf", "password": "W1KfYc"},
+    {"name": "Landay, Jonathan S.", "username": "jonathan.landay", "password": "t3qK8O"},
+    {"name": "Lang, Hannah", "username": "hannah.lang", "password": "6ZYhdE"},
+    {"name": "Levine, Daniel R.", "username": "dan.levine", "password": "8gZVgu"},
+    {"name": "Levy, Rachael", "username": "rachael.levy", "password": "5yxC6v"},
+    {"name": "Lynch, Sarah N.", "username": "sarah.n.lynch", "password": "KGmRuz"},
+    {"name": "MCLYMORE, ARRIANA", "username": "arriana.mclymore", "password": "P0Pr3p"},
+    {"name": "Matthews, Laura", "username": "laura.matthews", "password": "uNDqpN"},
+    {"name": "McCartney, Georgina", "username": "georgina.mccartney", "password": "1pOFnd"},
+    {"name": "McCaskill, Nolan", "username": "nolan.mccaskill", "password": "HB3bZE"},
+    {"name": "McGee, Suzanne", "username": "suzanne.mcgee", "password": "9tfPq1"},
+    {"name": "McKay, Rich", "username": "rich.mckay", "password": "7SgXrm"},
+    {"name": "McLaughlin, Timothy J.", "username": "tim.mclaughlin", "password": "zyvZHp"},
+    {"name": "Mikolajczak, Chuck", "username": "charles.mikolajczak", "password": "Bxvsw4"},
+    {"name": "Mutikani, Lucia V.", "username": "lucia.mutikani", "password": "6v9mKR"},
+    {"name": "Nellis, Stephen", "username": "stephen.nellis", "password": "t5x582"},
+    {"name": "Niasse, Amina", "username": "amina.niasse", "password": "Bk1pUJ"},
+    {"name": "Oguh, Chibuike", "username": "chibuike.oguh", "password": "F25GdC"},
+    {"name": "Oladipo, Doyinsola", "username": "doyinsola.oladipo", "password": "i3BfD0"},
+    {"name": "Parraga, Marianna", "username": "marianna.parraga", "password": "6qOs8k"},
+    {"name": "Paul, Katie", "username": "katie.paul", "password": "5quivt"},
+    {"name": "Plume, Karl", "username": "karl.plume", "password": "cYjcuI"},
+    {"name": "Polansek, Tom", "username": "thomas.polansek", "password": "YTZBXF"},
+    {"name": "Prentice, Chris", "username": "christine.prentice", "password": "ThCpqP"},
+    {"name": "Queen, Jack", "username": "jack.queen", "password": "h3FkGU"},
+    {"name": "Randewich, Noel", "username": "noel.randewich", "password": "Oul6d4"},
+    {"name": "Raymond, Nate", "username": "nate.raymond", "password": "QerXFR"},
+    {"name": "Respaut, Robin", "username": "robin.respaut", "password": "kdD99a"},
+    {"name": "Roulette, Joey", "username": "joey.roulette", "password": "IWvMoz"},
+    {"name": "Roy, Abhirup", "username": "abhirup.roy", "password": "7PhxxA"},
+    {"name": "Rozen, Courtney", "username": "courtney.rozen", "password": "qYbpog"},
+    {"name": "Saphir, Ann", "username": "ann.saphir", "password": "L7K3GB"},
+    {"name": "Scarcella, Mike", "username": "mike.scarcella", "password": "e1JTdM"},
+    {"name": "Scheyder, Ernest", "username": "ernest.scheyder", "password": "zTLzxn"},
+    {"name": "Schlitz, Heather", "username": "heather.schlitz", "password": "aZj4WW"},
+    {"name": "Seba, Erwin", "username": "erwin.seba", "password": "V2YCbQ"},
+    {"name": "Seetharaman, Deepa", "username": "deepa.seetharaman", "password": "PngRo2"},
+    {"name": "Shepardson, David", "username": "david.shepardson", "password": "t0vKuh"},
+    {"name": "Shirouzu, Norihiko", "username": "norihiko.shirouzu", "password": "OkfbMg"},
+    {"name": "Singh, Rajesh Kumar", "username": "rajeshkumar.singh", "password": "zAihdK"},
+    {"name": "Somasekhar, Arathy", "username": "arathy.s", "password": "WKlDQv"},
+    {"name": "Spector, Mike", "username": "mike.spector", "password": "fiQUpm"},
+    {"name": "Steenhuysen, Julie D.", "username": "julie.steenhuysen", "password": "WxgxB1"},
+    {"name": "Stempel, Jonathan E.", "username": "jon.stempel", "password": "fBuzr8"},
+    {"name": "Stone, Mike", "username": "mike.stone", "password": "9SVtNz"},
+    {"name": "Summerville, Abigail", "username": "abigail.summerville", "password": "00XT4F"},
+    {"name": "Teixeira, Marcelo", "username": "marcelo.teixeira", "password": "gMMg71"},
+    {"name": "Terhune, Chad", "username": "chad.terhune", "password": "XOhG3D"},
+    {"name": "Tracy, Matt", "username": "matt.tracy", "password": "rSteQt"},
+    {"name": "Tsvetkova, Maria", "username": "maria.tsvetkova", "password": "JLhDPt"},
+    {"name": "Valetkevitch, Caroline", "username": "caroline.valetkevitch", "password": "s3nXAc"},
+    {"name": "Valle, Sabrina", "username": "sabrina.valle", "password": "SVALJL"},
+    {"name": "Vicens, AJ", "username": "a.j.vicens", "password": "7ZmHvT"},
+    {"name": "Vinn, Milana", "username": "milana.vinn", "password": "nXpjsd"},
+    {"name": "Volcovici, Valerie", "username": "valerie.volcovici", "password": "Zd7nb9"},
+    {"name": "Wang, Echo", "username": "e.wang", "password": "Z58njU"},
+    {"name": "Wiessner, Daniel", "username": "daniel.wiessner", "password": "153gmC"},
+    {"name": "Williams, Curtis", "username": "curtis.williams", "password": "K9yGJo"},
+    {"name": "Wingrove, Patrick", "username": "patrick.wingrove", "password": "YZpmIK"},
+    {"name": "Winter, Jana", "username": "jana.winter", "password": "ch6nBi"},
+    {"name": "Wolfe, Jan", "username": "jan.wolfe", "password": "6aGKGY"},
+]
+
 @app.route('/api/reload-reporters-from-csv', methods=['POST'])
 def reload_reporters_from_csv():
-    """Reload reporter accounts from reporter_credentials.csv (ADMIN ONLY)"""
+    """Reload reporter accounts from embedded credentials data (ADMIN ONLY)"""
     if not session.get('is_manager'):
         return jsonify({'error': 'Unauthorized'}), 403
     
     try:
-        import csv
-        csv_path = os.path.join(BASE_DIR, 'reporter_credentials.csv')
-        
-        if not os.path.exists(csv_path):
-            return jsonify({'error': 'reporter_credentials.csv not found'}), 404
-        
         reporters = {}
         
         # Add admin account
@@ -717,26 +836,24 @@ def reload_reporters_from_csv():
             'password': generate_password_hash('admin123')
         }
         
-        # Read reporter credentials from CSV
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                username = row['Username']
-                name = row['Name']
-                password = row['Password']
-                
-                reporters[username] = {
-                    'name': name,
-                    'is_manager': False,
-                    'password': generate_password_hash(password)
-                }
+        # Add all reporters from embedded data
+        for rep in REPORTER_CREDENTIALS:
+            username = rep['username']
+            name = rep['name']
+            password = rep['password']
+            
+            reporters[username] = {
+                'name': name,
+                'is_manager': False,
+                'password': generate_password_hash(password)
+            }
         
         # Save to reporters.json
         save_json(REPORTERS_FILE, reporters)
         
         return jsonify({
             'success': True,
-            'message': f'Successfully reloaded {len(reporters) - 1} reporter accounts from CSV',
+            'message': f'Successfully reloaded {len(reporters) - 1} reporter accounts',
             'total_accounts': len(reporters)
         })
     
