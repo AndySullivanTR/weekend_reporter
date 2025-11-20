@@ -695,5 +695,53 @@ def change_password():
     
     return jsonify({'success': True, 'message': 'Password changed successfully'})
 
+@app.route('/api/reload-reporters-from-csv', methods=['POST'])
+def reload_reporters_from_csv():
+    """Reload reporter accounts from reporter_credentials.csv (ADMIN ONLY)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        import csv
+        csv_path = os.path.join(BASE_DIR, 'reporter_credentials.csv')
+        
+        if not os.path.exists(csv_path):
+            return jsonify({'error': 'reporter_credentials.csv not found'}), 404
+        
+        reporters = {}
+        
+        # Add admin account
+        reporters['admin'] = {
+            'name': 'Admin',
+            'is_manager': True,
+            'password': generate_password_hash('admin123')
+        }
+        
+        # Read reporter credentials from CSV
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                username = row['Username']
+                name = row['Name']
+                password = row['Password']
+                
+                reporters[username] = {
+                    'name': name,
+                    'is_manager': False,
+                    'password': generate_password_hash(password)
+                }
+        
+        # Save to reporters.json
+        save_json(REPORTERS_FILE, reporters)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully reloaded {len(reporters) - 1} reporter accounts from CSV',
+            'total_accounts': len(reporters)
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
