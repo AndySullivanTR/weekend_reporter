@@ -6,6 +6,22 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import random
 
+def get_naive_deadline(settings):
+    """Return a timezone-naive deadline datetime parsed from settings['deadline'].
+
+    If the stored deadline is timezone-aware, its tzinfo is stripped so it can be
+    safely compared with datetime.now(), which is also naive by default.
+    On parse errors, defaults to one week from now and logs a warning.
+    """
+    try:
+        deadline = datetime.fromisoformat(settings['deadline'])
+        if deadline.tzinfo is not None:
+            deadline = deadline.replace(tzinfo=None)
+        return deadline
+    except Exception as e:
+        print(f"Warning: Could not parse deadline: {e}")
+        return datetime.now() + timedelta(days=7)
+
 # Determine the base directory (where this script is located)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(BASE_DIR)
@@ -13,211 +29,336 @@ PARENT_DIR = os.path.dirname(BASE_DIR)
 template_folder = os.path.join(BASE_DIR, 'templates')
 app = Flask(__name__, template_folder=template_folder)
 # Fixed secret key for session persistence across restarts
-app.secret_key = 'weekend-reporter-shifts-secret-key-2025'
+app.secret_key = 'super_secret_key_for_dev_only'
 
-# Data storage (in production, use a proper database)
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-os.makedirs(DATA_DIR, exist_ok=True)
+# File paths for data storage
+SETTINGS_FILE = os.path.join(PARENT_DIR, 'reporter_settings.json')
+PREFERENCES_FILE = os.path.join(PARENT_DIR, 'reporter_preferences.json')
+ASSIGNMENTS_FILE = os.path.join(PARENT_DIR, 'weekend_assignments.json')
+USERS_FILE = os.path.join(PARENT_DIR, 'users.json')
 
-BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
-os.makedirs(BACKUP_DIR, exist_ok=True)
+# Define the user shift pedigree file path here
+PEDIGREE_FILE = os.path.join(PARENT_DIR, 'user_shift_pedigree.json')
 
-REPORTERS_FILE = os.path.join(DATA_DIR, 'reporters.json')
-PREFERENCES_FILE = os.path.join(DATA_DIR, 'preferences.json')
-SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
-ASSIGNMENTS_FILE = os.path.join(DATA_DIR, 'assignments.json')
+# Default settings structure
+default_settings = {
+    'period_label': 'Weekend Coverage: Saturday, Jan 4 - Sunday, Jan 5',
+    'deadline': '',
+    'is_locked': False,
+    'require_rating': True,
+    'collect_availability': False
+}
 
-# Generate 63 weekend shifts (21 weekends starting Dec 13, 2025)
-# Each shift has 2 slots for reporters
-def generate_shifts():
+# Default users with hashed passwords
+default_users = {
+    "manager": {
+        "password": generate_password_hash("managerpass"),
+        "is_manager": True,
+        "is_reporter": False
+    },
+    "reporter1": {
+        "password": generate_password_hash("reporterpass"),
+        "is_manager": False,
+        "is_reporter": True
+    }
+}
+
+# Updated shifts to have more slots and include identifying info
+def generate_weekend_shifts():
+    """
+    Generates weekend shifts for the next six weekends (Saturday and Sunday) with multiple slots per shift.
+    """
     shifts = []
-    start_date = datetime(2025, 12, 13)  # Saturday Dec 13, 2025
-    shift_id = 0
+    today = datetime.today()
+    start_saturday = today + timedelta((5 - today.weekday()) % 7)  # Next Saturday
     
-    for week in range(21):
-        saturday = start_date + timedelta(weeks=week)
+    shift_id = 1
+    for week in range(6):  # Next 6 weekends
+        saturday = start_saturday + timedelta(weeks=week)
         sunday = saturday + timedelta(days=1)
         
-        # Saturday shift - 2 reporters
+        # Saturday daytime shift - 2 reporters
         shifts.append({
             'id': shift_id,
             'date': saturday.strftime('%Y-%m-%d'),
             'day': 'Saturday',
-            'time': '11:00 AM - 7:00 PM',
+            'time': '9:00 AM - 5:00 PM',
             'slots': 2,
             'week': week + 1
         })
         shift_id += 1
         
-        # Sunday morning shift - 2 reporters
+        # Saturday evening shift - 1 reporter
+        shifts.append({
+            'id': shift_id,
+            'date': saturday.strftime('%Y-%m-%d'),
+            'day': 'Saturday',
+            'time': '5:00 PM - 11:00 PM',
+            'slots': 1,
+            'week': week + 1
+        })
+        shift_id += 1
+        
+        # Sunday daytime shift - 2 reporters
         shifts.append({
             'id': shift_id,
             'date': sunday.strftime('%Y-%m-%d'),
             'day': 'Sunday',
-            'time': '8:00 AM - 4:00 PM',
+            'time': '9:00 AM - 5:00 PM',
             'slots': 2,
             'week': week + 1
         })
         shift_id += 1
         
-        # Sunday evening shift - 2 reporters
+        # Sunday evening shift - 1 reporter
         shifts.append({
             'id': shift_id,
             'date': sunday.strftime('%Y-%m-%d'),
             'day': 'Sunday',
-            'time': '3:00 PM - 10:00 PM',
-            'slots': 2,
+            'time': '5:00 PM - 11:00 PM',
+            'slots': 1,
             'week': week + 1
         })
         shift_id += 1
     
     return shifts
 
-SHIFTS = generate_shifts()
+SHIFTS = generate_weekend_shifts()
 
-# Initialize data files
-def init_data_files():
-    # Create 119 reporters
-    if not os.path.exists(REPORTERS_FILE):
-        reporters = {}
-        
-        # Manager account
-        reporters['admin'] = {
-            'name': 'Admin',
-            'is_manager': True,
-            'password': generate_password_hash('admin123')
-        }
-        
-        # 119 reporter accounts
-        for i in range(1, 120):
-            username = f'reporter{i}'
-            reporters[username] = {
-                'name': f'Reporter{i}',
-                'is_manager': False,
-                'password': generate_password_hash('password')
-            }
-        
-        with open(REPORTERS_FILE, 'w') as f:
-            json.dump(reporters, f, indent=2)
-    
-    if not os.path.exists(PREFERENCES_FILE):
-        with open(PREFERENCES_FILE, 'w') as f:
-            json.dump({}, f)
-    
-    if not os.path.exists(SETTINGS_FILE):
-        # Default deadline: 7 days from now
-        deadline = (datetime.now() + timedelta(days=7)).isoformat()
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump({'deadline': deadline, 'is_locked': False}, f)
-    
-    if not os.path.exists(ASSIGNMENTS_FILE):
-        with open(ASSIGNMENTS_FILE, 'w') as f:
-            json.dump({}, f)
+def load_users():
+    """Load users from file or initialize default users."""
+    if not os.path.exists(USERS_FILE):
+        save_users(default_users)
+        return default_users
+    try:
+        with open(USERS_FILE, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading users: {e}")
+        save_users(default_users)
+        return default_users
 
-init_data_files()
-
-# Helper functions
-def load_json(filepath):
-    with open(filepath, 'r') as f:
-        return json.load(f)
-
-def save_json(filepath, data):
-    with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2)
-
-def get_reporters():
-    return load_json(REPORTERS_FILE)
-
-def get_preferences():
-    return load_json(PREFERENCES_FILE)
+def save_users(users):
+    """Save users to file."""
+    try:
+        with open(USERS_FILE, 'w') as f:
+            json.dump(users, f, indent=4)
+    except IOError as e:
+        print(f"Error saving users: {e}")
 
 def get_settings():
-    return load_json(SETTINGS_FILE)
+    """Load settings from JSON file."""
+    if not os.path.exists(SETTINGS_FILE):
+        save_settings(default_settings)
+        return default_settings
+    try:
+        with open(SETTINGS_FILE, 'r') as f:
+            settings = json.load(f)
+        for key, value in default_settings.items():
+            settings.setdefault(key, value)
+        return settings
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading settings: {e}")
+        save_settings(default_settings)
+        return default_settings
+
+def save_settings(settings):
+    """Save settings to JSON file."""
+    try:
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=4)
+    except IOError as e:
+        print(f"Error saving settings: {e}")
+
+def get_preferences():
+    """Load preferences from JSON file."""
+    if not os.path.exists(PREFERENCES_FILE):
+        return {}
+    try:
+        with open(PREFERENCES_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get('preferences', {})
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading preferences: {e}")
+        return {}
+
+def save_preferences_to_file(preferences):
+    """Save preferences to JSON file."""
+    data = {
+        "last_updated": datetime.now().isoformat(),
+        "preferences": preferences
+    }
+    try:
+        with open(PREFERENCES_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except IOError as e:
+        print(f"Error saving preferences: {e}")
 
 def get_assignments():
-    return load_json(ASSIGNMENTS_FILE)
-
-def create_auto_backup():
-    """Create an automatic backup of all data files"""
+    """Load assignments from JSON file."""
+    if not os.path.exists(ASSIGNMENTS_FILE):
+        return {}
     try:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_data = {
-            'reporters': get_reporters(),
-            'preferences': get_preferences(),
-            'settings': get_settings(),
-            'assignments': get_assignments(),
-            'timestamp': datetime.now().isoformat()
-        }
+        with open(ASSIGNMENTS_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get('assignments', {})
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading assignments: {e}")
+        return {}
+
+def save_assignments(assignments, assigned_shift_counts=None, coverage_gaps=None, future_assignments=None):
+    """Save assignments to JSON file."""
+    data = {
+        "last_updated": datetime.now().isoformat(),
+        "assignments": assignments
+    }
+
+    if assigned_shift_counts is not None:
+        data["metadata"] = data.get("metadata", {})
+        data["metadata"]["assigned_shift_counts"] = assigned_shift_counts
+
+    if coverage_gaps is not None:
+        data["metadata"] = data.get("metadata", {})
+        data["metadata"]["coverage_gaps"] = coverage_gaps
+
+    if future_assignments is not None:
+        data["metadata"] = data.get("metadata", {})
+        data["metadata"]["future_assignments"] = future_assignments
         
-        backup_file = os.path.join(BACKUP_DIR, f'auto_backup_{timestamp}.json')
-        with open(backup_file, 'w') as f:
-            json.dump(backup_data, f, indent=2)
-        
-        # Keep only last 30 backups to save space
-        backup_files = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('auto_backup_')])
-        if len(backup_files) > 30:
-            for old_backup in backup_files[:-30]:
-                os.remove(os.path.join(BACKUP_DIR, old_backup))
-        
-        return True
+    try:
+        with open(ASSIGNMENTS_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except IOError as e:
+        print(f"Error saving assignments: {e}")
+
+def save_user_shift_pedigree(user_shift_pedigree):
+    """Save user shift pedigree to JSON file."""
+    data = {
+        "last_updated": datetime.now().isoformat(),
+        "user_shift_pedigree": user_shift_pedigree
+    }
+    try:
+        with open(PEDIGREE_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except IOError as e:
+        print(f"Error saving user shift pedigree: {e}")
+
+def load_user_shift_pedigree():
+    """Load user shift pedigree from JSON file or return empty dict."""
+    if not os.path.exists(PEDIGREE_FILE):
+        return {}
+    try:
+        with open(PEDIGREE_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get("user_shift_pedigree", {})
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading user shift pedigree: {e}")
+        return {}
+
+def get_eligible_users_for_shift(user_shift_pedigree, cutoff_months=6):
+    """
+    Returns a set of users who have taken shifts in the last given number of months (default 6).
+    """
+    eligible_users = set()
+    cutoff_date = datetime.now() - timedelta(days=30 * cutoff_months)  # Rough 6 months period
+    
+    for user, shifts in user_shift_pedigree.items():
+        for shift in shifts:
+            try:
+                shift_date = datetime.strptime(shift['date'], '%Y-%m-%d')
+                if shift_date >= cutoff_date:
+                    eligible_users.add(user)
+                    break  # Only need to know if they worked at least once
+            except ValueError as e:
+                print(f"Error parsing shift date for user {user}: {e}")
+                continue
+    
+    return eligible_users
+
+def compute_shift_pedigree(assignments, existing_pedigree=None):
+    """
+    Computes and returns user shift pedigree from the assignments.
+    """
+    user_shift_pedigree = existing_pedigree or {}
+
+    # Use SHIFTS data to map shift IDs to details (day, time, date)
+    shift_map = {shift['id']: shift for shift in SHIFTS}
+
+    for user, user_assignments in assignments.items():
+        for shift_data in user_assignments:
+            shift_id = shift_data if isinstance(shift_data, int) else shift_data.get('id')
+            shift_details = shift_map.get(shift_id)
+
+            if not shift_details:
+                continue
+
+            entry = {
+                'date': shift_details['date'],
+                'day': shift_details['day'],
+                'time': shift_details['time'],
+                'week': shift_details['week']
+            }
+
+            if user not in user_shift_pedigree:
+                user_shift_pedigree[user] = []
+
+            if entry not in user_shift_pedigree[user]:
+                user_shift_pedigree[user].append(entry)
+
+    return user_shift_pedigree
+
+def format_deadline(deadline_str):
+    """Format deadline string in a more readable way."""
+    try:
+        if deadline_str.endswith('Z'):
+            # Convert to local time
+            deadline_dt = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
+        else:
+            deadline_dt = datetime.fromisoformat(deadline_str)
+        return deadline_dt.strftime('%A, %B %d at %I:%M %p')
     except Exception as e:
-        print(f"Auto-backup failed: {e}")
-        return False
+        print(f"Error formatting deadline: {e}")
+        return deadline_str
 
-def format_deadline(iso_datetime_str):
-    """Format ISO datetime to readable format: 'Nov. 27, 2025 2:37 pm ET'"""
-    dt = datetime.fromisoformat(iso_datetime_str)
-    # Format: Nov. 27, 2025 2:37 pm ET
-    month = dt.strftime('%b')  # Nov
-    day = dt.day  # 27
-    year = dt.year  # 2025
-    hour = dt.hour
-    minute = dt.minute
-    
-    # Convert to 12-hour format with am/pm
-    if hour == 0:
-        hour_12 = 12
-        am_pm = 'am'
-    elif hour < 12:
-        hour_12 = hour
-        am_pm = 'am'
-    elif hour == 12:
-        hour_12 = 12
-        am_pm = 'pm'
-    else:
-        hour_12 = hour - 12
-        am_pm = 'pm'
-    
-    return f"{month}. {day}, {year} {hour_12}:{minute:02d} {am_pm} ET"
-
-# Routes
 @app.route('/')
-def index():
+def home():
     if 'username' in session:
         if session.get('is_manager'):
             return redirect(url_for('manager_dashboard'))
-        else:
+        elif session.get('is_reporter'):
             return redirect(url_for('reporter_dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        data = request.json
-        username = data.get('username')
-        password = data.get('password')
-        
-        reporters = get_reporters()
-        
-        if username in reporters:
-            if check_password_hash(reporters[username]['password'], password):
-                session['username'] = username
-                session['is_manager'] = reporters[username].get('is_manager', False)
-                return jsonify({'success': True, 'is_manager': session['is_manager']})
-        
-        return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+    users = load_users()
+    error = None
     
-    return render_template('login.html')
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        # Debug print: show available users and their types
+        print(f"Login attempt for username: {username}")
+        print(f"Available users in system: {list(users.keys())}")
+
+        user = users.get(username)
+        if user and check_password_hash(user['password'], password):
+            session['username'] = username
+            session['is_manager'] = user.get('is_manager', False)
+            session['is_reporter'] = user.get('is_reporter', False)
+
+            if user.get('is_manager'):
+                print(f"User '{username}' identified as manager. Redirecting to manager dashboard.")
+                return redirect(url_for('manager_dashboard'))
+            elif user.get('is_reporter'):
+                print(f"User '{username}' identified as reporter. Redirecting to reporter dashboard.")
+                return redirect(url_for('reporter_dashboard'))
+        else:
+            error = 'Invalid username or password'
+            print(f"Invalid login attempt for username: {username}")
+    
+    return render_template('login.html', error=error)
 
 @app.route('/logout')
 def logout():
@@ -226,29 +367,157 @@ def logout():
 
 @app.route('/manager/dashboard')
 def manager_dashboard():
-    if not session.get('is_manager'):
+    if 'username' not in session or not session.get('is_manager'):
         return redirect(url_for('login'))
     
-    reporters = get_reporters()
     settings = get_settings()
     preferences = get_preferences()
     assignments = get_assignments()
     
-    # Count reporters who have submitted preferences (top 10 + bottom 5)
-    submitted_count = sum(1 for rep, prefs in preferences.items() 
-                         if prefs and len(prefs.get('top_10', [])) == 10 and len(prefs.get('bottom_5', [])) == 5)
+    # Format deadline for display
+    formatted_deadline = format_deadline(settings['deadline']) if settings.get('deadline') else 'Not set'
+        
+    # Calculate preference statistics
+    shift_stats = {shift['id']: {
+        'total_rating': 0,
+        'rating_count': 0,
+        'avg_rating': 0.0,
+        'full_name': f"{shift['day']} ({shift['date']}) {shift['time']}",
+        'slots': shift['slots']
+    } for shift in SHIFTS}
     
-    return render_template('manager_dashboard.html', 
-                         reporters=reporters,
-                         settings=settings,
-                         submitted_count=submitted_count,
-                         total_reporters=len([r for r in reporters.values() if not r.get('is_manager')]),
-                         assignments=assignments,
-                         preferences=preferences,
-                         shifts=SHIFTS)
+    for user_prefs in preferences.values():
+        for shift_id, rating in user_prefs.items():
+            if isinstance(rating, int) and shift_id in shift_stats:
+                shift_stats[shift_id]['total_rating'] += rating
+                shift_stats[shift_id]['rating_count'] += 1
+    
+    for stats in shift_stats.values():
+        if stats['rating_count'] > 0:
+            stats['avg_rating'] = round(stats['total_rating'] / stats['rating_count'], 2)
+    
+    # Compute shift pedigree
+    user_shift_pedigree = load_user_shift_pedigree()
+    
+    # Update the pedigree with current assignments (if any new)
+    current_assignments = get_assignments()
+    user_shift_pedigree = compute_shift_pedigree(current_assignments, existing_pedigree=user_shift_pedigree)
+    
+    # Save pedigree and pass it to the template
+    save_user_shift_pedigree(user_shift_pedigree)
+    
+    return render_template(
+        'manager_dashboard.html',
+        shifts=SHIFTS,
+        settings=settings,
+        preferences=preferences,
+        assignments=assignments,
+        shift_stats=shift_stats,
+        user_shift_pedigree=user_shift_pedigree,
+        formatted_deadline=formatted_deadline
+    )
 
-@app.route('/reporter/dashboard')
-def reporter_dashboard():
+@app.route('/manager/settings', methods=['GET', 'POST'])
+def manage_settings():
+    if 'username' not in session or not session.get('is_manager'):
+        return redirect(url_for('login'))
+    
+    settings = get_settings()
+    error = None
+    success = None
+    
+    if request.method == 'POST':
+        try:
+            settings['period_label'] = request.form.get('period_label', '').strip() or default_settings['period_label']
+            settings['deadline'] = request.form.get('deadline', '').strip()
+            settings['is_locked'] = 'is_locked' in request.form
+            settings['require_rating'] = 'require_rating' in request.form
+            settings['collect_availability'] = 'collect_availability' in request.form
+            
+            save_settings(settings)
+            success = "Settings updated successfully."
+        except Exception as e:
+            error = f"Error updating settings: {e}"
+    
+    formatted_deadline = format_deadline(settings['deadline']) if settings.get('deadline') else ''
+    
+    return render_template(
+        'manage_settings.html',
+        settings=settings,
+        error=error,
+        success=success,
+        formatted_deadline=formatted_deadline
+    )
+
+@app.route('/manager/users', methods=['GET', 'POST'])
+def manage_users():
+    if 'username' not in session or not session.get('is_manager'):
+        return redirect(url_for('login'))
+    
+    users = load_users()
+    error = None
+    success = None
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'add':
+            new_username = request.form.get('new_username', '').strip()
+            new_password = request.form.get('new_password', '').strip()
+            is_manager = 'is_manager' in request.form
+            is_reporter = 'is_reporter' in request.form
+            
+            if not new_username or not new_password:
+                error = "Username and password are required."
+            elif new_username in users:
+                error = "User already exists."
+            else:
+                # Add salt to password
+                salt = secrets.token_hex(16)
+                salted_password = f"{new_password}{salt}"
+                
+                users[new_username] = {
+                    'password': generate_password_hash(salted_password),
+                    'is_manager': is_manager,
+                    'is_reporter': is_reporter,
+                    'salt': salt  # Store salt in user data
+                }
+                save_users(users)
+                success = "User added successfully."
+
+        elif action == 'delete':
+            delete_username = request.form.get('delete_username', '').strip()
+            if delete_username == 'manager':
+                error = "Cannot delete the default manager account."
+            elif delete_username in users:
+                users.pop(delete_username)
+                save_users(users)
+                success = "User deleted successfully."
+            else:
+                error = "User not found."
+        
+        elif action == 'reset_password':
+            reset_username = request.form.get('reset_username', '').strip()
+            new_password = request.form.get('new_password', '').strip()
+            
+            if not new_password:
+                error = "New password is required."
+            elif reset_username in users:
+                # Generate new salt and update password
+                salt = secrets.token_hex(16)
+                salted_password = f"{new_password}{salt}"
+                
+                users[reset_username]['password'] = generate_password_hash(salted_password)
+                users[reset_username]['salt'] = salt
+                save_users(users)
+                success = f"Password for {reset_username} has been reset."
+            else:
+                error = "User not found."
+    
+    return render_template('manage_users.html', users=users, error=error, success=success)
+
+@app.route('/employee/dashboard')
+def employee_dashboard():
     if 'username' not in session or session.get('is_manager'):
         return redirect(url_for('login'))
     
@@ -261,13 +530,13 @@ def reporter_dashboard():
     user_assignments = assignments.get(username, [])
     
     # Check if deadline has passed
-    deadline = datetime.fromisoformat(settings['deadline'])
+    deadline = get_naive_deadline(settings)
     is_locked = settings.get('is_locked', False) or datetime.now() > deadline
     
     # Format deadline for display
-    formatted_deadline = format_deadline(settings['deadline'])
+    formatted_deadline = format_deadline(settings['deadline']) if settings.get('deadline') else 'Not set'
     
-    return render_template('reporter_dashboard.html',
+    return render_template('employee_dashboard.html',
                          username=username,
                          shifts=SHIFTS,
                          preferences=user_prefs,
@@ -275,7 +544,86 @@ def reporter_dashboard():
                          deadline=formatted_deadline,
                          is_locked=is_locked)
 
-@app.route('/api/preferences', methods=['GET', 'POST'])
+@app.route('/reporter/dashboard')
+def reporter_dashboard():
+    if 'username' not in session or not session.get('is_reporter'):
+        return redirect(url_for('login'))
+
+    settings = get_settings()
+    preferences = get_preferences()
+    assignments = get_assignments()
+    username = session['username']
+
+    user_prefs = preferences.get(username, {})
+    user_assignments = assignments.get(username, [])
+
+    # Format deadline for display
+    formatted_deadline = format_deadline(settings['deadline']) if settings.get('deadline') else 'Not set'
+
+    # Fetch the full user shift pedigree
+    user_shift_pedigree = load_user_shift_pedigree()
+
+    # If current user doesn't have a history yet, initialize it
+    if username not in user_shift_pedigree:
+        user_shift_pedigree[username] = []
+
+    # Get assigned shift counts from assignments metadata
+    assigned_shift_counts = {}
+    if os.path.exists(ASSIGNMENTS_FILE):
+        try:
+            with open(ASSIGNMENTS_FILE, 'r') as f:
+                data = json.load(f)
+                if 'metadata' in data and 'assigned_shift_counts' in data['metadata']:
+                    assigned_shift_counts = data['metadata']['assigned_shift_counts']
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error loading assignments metadata: {e}")
+
+    user_assigned_shifts = assigned_shift_counts.get(username, [])
+
+    # Generate and display status message for the user
+    status_messages = []
+    today = datetime.today().date()
+    future_additional_shifts = []
+
+    for shift in user_assigned_shifts:
+        try:
+            shift_date = datetime.strptime(shift['date'], '%Y-%m-%d').date()
+            if shift_date >= today:
+                # Future or today's shift
+                future_additional_shifts.append(shift)
+        except ValueError as e:
+            print(f"Error parsing date in user_assigned_shifts: {e}")
+            continue
+
+    if future_additional_shifts:
+        status_messages.append("You have the following shift(s) assigned in the upcoming weekends beyond the current period:")
+        for shift in future_additional_shifts:
+            status_messages.append(f"- {shift['day']} ({shift['date']}) {shift['time']}")
+
+    # Calculate overall assignment count for reporter
+    total_assigned_shifts = len(user_assigned_shifts)
+    if total_assigned_shifts == 0:
+        status_messages.append("You have no additional shift assignments beyond the current period.")
+    else:
+        status_messages.append(f"You have a total of {total_assigned_shifts} shift(s) assigned in the next six months.")
+
+    # If user has history (shift pedigree), add summary
+    if user_shift_pedigree.get(username):
+        total_past_shifts = len(user_shift_pedigree[username])
+        status_messages.append(f"You have previously worked {total_past_shifts} weekend shift(s) in the last six months.")
+
+    return render_template(
+        'reporter_dashboard.html',
+        username=username,
+        shifts=SHIFTS,
+        preferences=user_prefs,
+        assignments=user_assignments,
+        deadline=formatted_deadline,
+        status_messages=status_messages,
+        user_shift_pedigree=user_shift_pedigree
+    )
+
+@app.route('/employee/preferences', methods=['GET', 'POST'])
 def manage_preferences():
     if 'username' not in session:
         return jsonify({'error': 'Unauthorized'}), 403
@@ -285,783 +633,35 @@ def manage_preferences():
     settings = get_settings()
     
     # Check if locked
-    deadline = datetime.fromisoformat(settings['deadline'])
+    deadline = get_naive_deadline(settings)
     is_locked = settings.get('is_locked', False) or datetime.now() > deadline
     
     if request.method == 'POST':
         if is_locked and not session.get('is_manager'):
             return jsonify({'error': 'Preferences are locked'}), 403
         
-        data = request.json
-        
-        # Validate data structure
-        if 'top_10' not in data or 'bottom_5' not in data or 'shift_type_pref' not in data:
-            return jsonify({'error': 'Invalid preference format'}), 400
-        
-        if len(data['top_10']) != 10:
-            return jsonify({'error': 'Must select exactly 10 top preferences'}), 400
-        
-        if len(data['bottom_5']) != 5:
-            return jsonify({'error': 'Must select exactly 5 least wanted shifts'}), 400
-        
-        preferences[username] = {
-            'top_10': data['top_10'],
-            'bottom_5': data['bottom_5'],
-            'shift_type_pref': data['shift_type_pref']
-        }
-        save_json(PREFERENCES_FILE, preferences)
-        
-        # Create auto-backup after preference submission
-        create_auto_backup()
-        
-        return jsonify({'success': True})
-    
-    # GET
-    if session.get('is_manager'):
-        return jsonify(preferences)
-    else:
-        return jsonify({username: preferences.get(username, {})})
-
-@app.route('/api/settings', methods=['GET', 'POST'])
-def manage_settings():
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    settings = get_settings()
-    
-    if request.method == 'POST':
-        data = request.json
-        
-        if 'deadline' in data:
-            settings['deadline'] = data['deadline']
-        
-        if 'is_locked' in data:
-            settings['is_locked'] = data['is_locked']
-        
-        save_json(SETTINGS_FILE, settings)
-        return jsonify({'success': True})
-    
-    return jsonify(settings)
-
-@app.route('/api/allocate', methods=['POST'])
-def allocate_shifts():
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    # Create backup before allocation
-    create_auto_backup()
-    
-    preferences = get_preferences()
-    reporters_data = get_reporters()
-    
-    # Get list of non-manager reporters
-    reporter_list = [user for user, rep in reporters_data.items() if not rep.get('is_manager')]
-    
-    # Separate reporters into those WITH and WITHOUT preferences
-    reporters_with_prefs = []
-    reporters_without_prefs = []
-    warnings = []
-    
-    for rep in reporter_list:
-        if rep in preferences:
-            prefs = preferences[rep]
-            if len(prefs.get('top_10', [])) == 10 and len(prefs.get('bottom_5', [])) == 5:
-                reporters_with_prefs.append(rep)
-            else:
-                reporters_without_prefs.append(rep)
-                rep_name = reporters_data[rep]['name']
-                warnings.append(f"{rep_name} has incomplete preferences - will be randomly assigned")
-        else:
-            reporters_without_prefs.append(rep)
-            rep_name = reporters_data[rep]['name']
-            warnings.append(f"{rep_name} did not submit preferences - will be randomly assigned")
-    
-    # Initialize assignments
-    assignments = {rep: [] for rep in reporter_list}
-    shift_assignments = {shift['id']: [] for shift in SHIFTS}
-    
-    # Set random seed for reproducibility
-    random.seed(42)
-    
-    # PHASE 1: Allocate for reporters WITH preferences
-    # Strategy: Fill weeks 1-20 first (shifts 0-59), then week 21 (shifts 60-62)
-    print("\n=== REPORTER SHIFT ALLOCATION (WITH PREFERENCES) ===")
-    print("Strategy: Prioritizing weeks 1-20 (shifts 0-59) to be fully filled")
-    
-    shuffled_reporters = reporters_with_prefs.copy()
-    random.shuffle(shuffled_reporters)
-    
-    # Assign one shift to each reporter
-    for rep in shuffled_reporters:
-        prefs = preferences[rep]
-        top_10 = prefs['top_10']
-        bottom_5 = prefs['bottom_5']
-        
-        # Try to assign from top 10 preferences, prioritizing weeks 1-20
-        assigned = False
-        
-        # First try: top 10 preferences that are in weeks 1-20 (shift IDs 0-59)
-        for shift_id in top_10:
-            if shift_id >= 60:  # Skip week 21 for now
-                continue
+        try:
+            ratings = request.json.get('ratings', {})
+            print(f"Received ratings for {username}: {ratings}")
             
-            shift = next(s for s in SHIFTS if s['id'] == shift_id)
-            if len(shift_assignments[shift_id]) >= shift['slots']:
-                continue
+            # Ensure user has a preferences entry
+            if username not in preferences:
+                preferences[username] = {}
             
-            assignments[rep].append(shift_id)
-            shift_assignments[shift_id].append(rep)
-            assigned = True
-            rank = top_10.index(shift_id) + 1
-            print(f"✓ {rep:30} → Shift {shift_id:2} (week {shift['week']}, preference #{rank})")
-            break
-        
-        # Second try: top 10 preferences in week 21 if nothing in weeks 1-20
-        if not assigned:
-            for shift_id in top_10:
-                if shift_id < 60:  # Already tried these
+            for shift_id_str, rating in ratings.items():
+                try:
+                    shift_id = int(shift_id_str)
+                    if rating is None:
+                        # Remove rating if None
+                        preferences[username].pop(str(shift_id), None)
+                    elif isinstance(rating, int) and -1 <= rating <= 3:
+                        preferences[username][str(shift_id)] = rating
+                except ValueError:
+                    print(f"Invalid shift_id: {shift_id_str}")
                     continue
-                
-                shift = next(s for s in SHIFTS if s['id'] == shift_id)
-                if len(shift_assignments[shift_id]) >= shift['slots']:
-                    continue
-                
-                assignments[rep].append(shift_id)
-                shift_assignments[shift_id].append(rep)
-                assigned = True
-                rank = top_10.index(shift_id) + 1
-                print(f"✓ {rep:30} → Shift {shift_id:2} (week 21, preference #{rank})")
-                break
-        
-        # Third try: non-bottom-5 shifts in weeks 1-20
-        if not assigned:
-            shift_type_pref = prefs.get('shift_type_pref', {})
-            sorted_types = sorted(shift_type_pref.items(), key=lambda x: x[1])
             
-            for shift_type, _ in sorted_types:
-                for shift in SHIFTS:
-                    shift_id = shift['id']
-                    
-                    # Prioritize weeks 1-20
-                    if shift_id >= 60:
-                        continue
-                    
-                    if shift_id in bottom_5 or shift_id in top_10:
-                        continue
-                    
-                    # Check shift type match
-                    shift_matches = False
-                    if shift_type == 'saturday' and shift['day'] == 'Saturday':
-                        shift_matches = True
-                    elif shift_type == 'sunday_morning' and shift['day'] == 'Sunday' and '8:00 AM' in shift['time']:
-                        shift_matches = True
-                    elif shift_type == 'sunday_evening' and shift['day'] == 'Sunday' and '3:00 PM' in shift['time']:
-                        shift_matches = True
-                    
-                    if not shift_matches:
-                        continue
-                    
-                    if len(shift_assignments[shift_id]) >= shift['slots']:
-                        continue
-                    
-                    assignments[rep].append(shift_id)
-                    shift_assignments[shift_id].append(rep)
-                    assigned = True
-                    print(f"⚠ {rep:30} → Shift {shift_id:2} (week {shift['week']}, backup assignment)")
-                    break
-                
-                if assigned:
-                    break
-        
-        if not assigned:
-            print(f"✗ {rep:30} → Could not assign shift")
-    
-    # PHASE 2: Random allocation for reporters WITHOUT preferences
-    if reporters_without_prefs:
-        print("\n=== RANDOM ALLOCATION (NO PREFERENCES) ===")
-        
-        # Assign 1 shift to each reporter, prioritizing weeks 1-20
-        for rep in reporters_without_prefs:
-            # Create pool of available shifts, prioritizing weeks 1-20 (shifts 0-59)
-            available_weeks_1_20 = []
-            available_week_21 = []
-            
-            for shift in SHIFTS:
-                shift_id = shift['id']
-                filled = len(shift_assignments[shift_id])
-                capacity = shift['slots']
-                
-                if filled < capacity:
-                    if shift_id < 60:  # Weeks 1-20
-                        available_weeks_1_20.append(shift_id)
-                    else:  # Week 21
-                        available_week_21.append(shift_id)
-            
-            # Try weeks 1-20 first
-            if available_weeks_1_20:
-                random.shuffle(available_weeks_1_20)
-                shift_id = available_weeks_1_20[0]
-                shift = next(s for s in SHIFTS if s['id'] == shift_id)
-                assignments[rep].append(shift_id)
-                shift_assignments[shift_id].append(rep)
-                print(f"🎲 {rep:30} → Shift {shift_id:2} (week {shift['week']}, random)")
-            elif available_week_21:
-                # Only use week 21 if weeks 1-20 are full
-                random.shuffle(available_week_21)
-                shift_id = available_week_21[0]
-                shift = next(s for s in SHIFTS if s['id'] == shift_id)
-                assignments[rep].append(shift_id)
-                shift_assignments[shift_id].append(rep)
-                print(f"🎲 {rep:30} → Shift {shift_id:2} (week 21, random)")
-            else:
-                print(f"✗ {rep:30} → No shifts available")
-                warnings.append(f"{reporters_data[rep]['name']} could not be assigned - no capacity remaining")
-    
-    # Save assignments
-    save_json(ASSIGNMENTS_FILE, assignments)
-    
-    # Lock preferences
-    settings = get_settings()
-    settings['is_locked'] = True
-    save_json(SETTINGS_FILE, settings)
-    
-    return jsonify({
-        'success': True,
-        'assignments': assignments,
-        'shift_assignments': shift_assignments,
-        'warnings': warnings,
-        'reporters_with_prefs': len(reporters_with_prefs),
-        'reporters_without_prefs': len(reporters_without_prefs)
-    })
-
-@app.route('/api/backup')
-def backup_data():
-    """Download all data files as JSON for backup"""
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    backup_data = {
-        'reporters': get_reporters(),
-        'preferences': get_preferences(),
-        'settings': get_settings(),
-        'assignments': get_assignments(),
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    from io import BytesIO
-    output = BytesIO()
-    output.write(json.dumps(backup_data, indent=2).encode('utf-8'))
-    output.seek(0)
-    
-    return send_file(
-        output,
-        mimetype='application/json',
-        as_attachment=True,
-        download_name=f'backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
-    )
-
-@app.route('/api/populate-test-data', methods=['POST'])
-def populate_test_data():
-    """Populate random preferences for all reporters (TESTING ONLY)"""
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    reporters = get_reporters()
-    preferences = {}
-    
-    # All 60 shift IDs
-    all_shifts = list(range(60))
-    
-    # Generate random preferences for each non-manager reporter
-    for username, rep_data in reporters.items():
-        if rep_data.get('is_manager'):
-            continue
-        
-        # Shuffle all shifts
-        shuffled = all_shifts.copy()
-        random.shuffle(shuffled)
-        
-        # Top 10 are first 10 from shuffled list
-        top_10 = shuffled[:10]
-        
-        # Bottom 5 are next 5 from shuffled list
-        bottom_5 = shuffled[10:15]
-        
-        # Random shift type preferences (1, 2, 3)
-        shift_types = [1, 2, 3]
-        random.shuffle(shift_types)
-        
-        preferences[username] = {
-            'top_10': top_10,
-            'bottom_5': bottom_5,
-            'shift_type_pref': {
-                'saturday': str(shift_types[0]),
-                'sunday_morning': str(shift_types[1]),
-                'sunday_evening': str(shift_types[2])
-            }
-        }
-    
-    # Save preferences
-    save_json(PREFERENCES_FILE, preferences)
-    
-    return jsonify({
-        'success': True,
-        'message': f'Populated random preferences for {len(preferences)} reporters'
-    })
-
-@app.route('/api/export-excel')
-def export_excel():
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment
-        from io import BytesIO
-        
-        assignments = get_assignments()
-        reporters = get_reporters()
-        preferences = get_preferences()
-        
-        # Create workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Reporter Schedule"
-        
-        # Title
-        ws['A1'] = 'Weekend Reporter Shift Schedule - Dec 2025 - Apr 2026'
-        ws['A1'].font = Font(size=16, bold=True)
-        ws.merge_cells('A1:H1')
-        
-        # Headers
-        headers = ['Date', 'Day', 'Time', 'Assigned Reporters', 'Preference Rank', 'Status', 'Week', 'Notes']
-        header_row = 3
-        for col, header in enumerate(headers, start=1):
-            cell = ws.cell(row=header_row, column=col)
-            cell.value = header
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill(start_color="FF6B35", end_color="FF6B35", fill_type="solid")
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-        
-        # Data
-        row = header_row + 1
-        for shift in SHIFTS:
-            shift_id = shift['id']
-            assigned = []
-            
-            for rep, rep_shifts in assignments.items():
-                if shift_id in rep_shifts:
-                    assigned.append(rep)
-            
-            ws.cell(row=row, column=1).value = shift['date']
-            ws.cell(row=row, column=2).value = shift['day']
-            ws.cell(row=row, column=3).value = shift['time']
-            
-            # Assigned reporters (can be 0, 1, or 2)
-            if assigned:
-                rep_names = []
-                pref_ranks = []
-                for rep in assigned:
-                    rep_names.append(reporters[rep]['name'])
-                    
-                    if rep in preferences:
-                        prefs = preferences[rep]
-                        if shift_id in prefs.get('top_10', []):
-                            rank = prefs['top_10'].index(shift_id) + 1
-                            pref_ranks.append(f"#{rank}")
-                        elif shift_id in prefs.get('bottom_5', []):
-                            pref_ranks.append("Bottom-5")
-                        else:
-                            pref_ranks.append("N/A")
-                    else:
-                        pref_ranks.append("N/A")
-                
-                ws.cell(row=row, column=4).value = ", ".join(rep_names)
-                ws.cell(row=row, column=5).value = ", ".join(pref_ranks)
-            else:
-                ws.cell(row=row, column=4).value = "VACANT"
-                ws.cell(row=row, column=4).font = Font(color="FF0000", bold=True)
-            
-            # Status
-            filled = len(assigned)
-            total = shift['slots']
-            if filled >= total:
-                ws.cell(row=row, column=6).value = "FILLED"
-                ws.cell(row=row, column=6).fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-            else:
-                ws.cell(row=row, column=6).value = f"VACANT ({total - filled})"
-                ws.cell(row=row, column=6).fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-            
-            ws.cell(row=row, column=7).value = shift['week']
-            
-            row += 1
-        
-        # Reporter summary
-        row += 2
-        ws.cell(row=row, column=1).value = "Reporter Summary"
-        ws.cell(row=row, column=1).font = Font(size=14, bold=True)
-        
-        row += 1
-        summary_headers = ['Reporter', 'Shifts Assigned', 'Shift Details', 'Status']
-        for col, header in enumerate(summary_headers, start=1):
-            cell = ws.cell(row=row, column=col)
-            cell.value = header
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill(start_color="FF6B35", end_color="FF6B35", fill_type="solid")
-        
-        row += 1
-        for rep, rep_data in reporters.items():
-            if rep_data.get('is_manager'):
-                continue
-            
-            ws.cell(row=row, column=1).value = rep_data['name']
-            
-            rep_shifts = assignments.get(rep, [])
-            ws.cell(row=row, column=2).value = len(rep_shifts)
-            
-            shift_details = []
-            for shift_id in rep_shifts:
-                shift = next(s for s in SHIFTS if s['id'] == shift_id)
-                shift_details.append(f"{shift['date']} {shift['day']} {shift['time']}")
-            ws.cell(row=row, column=3).value = "; ".join(shift_details) if shift_details else "None"
-            
-            if len(rep_shifts) == 1:
-                ws.cell(row=row, column=4).value = "Complete"
-                ws.cell(row=row, column=4).fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-            else:
-                ws.cell(row=row, column=4).value = f"Incomplete ({len(rep_shifts)}/1)"
-                ws.cell(row=row, column=4).fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-            
-            row += 1
-        
-        # Adjust column widths
-        ws.column_dimensions['A'].width = 12
-        ws.column_dimensions['B'].width = 12
-        ws.column_dimensions['C'].width = 20
-        ws.column_dimensions['D'].width = 30
-        ws.column_dimensions['E'].width = 15
-        ws.column_dimensions['F'].width = 15
-        ws.column_dimensions['G'].width = 10
-        ws.column_dimensions['H'].width = 30
-        
-        output = BytesIO()
-        wb.save(output)
-        output.seek(0)
-        
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=f'reporter_schedule_{datetime.now().strftime("%Y%m%d")}.xlsx'
-        )
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/change-password', methods=['POST'])
-def change_password():
-    """Allow users to change their password"""
-    if 'username' not in session:
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    username = session['username']
-    data = request.json
-    
-    current_password = data.get('current_password')
-    new_password = data.get('new_password')
-    
-    if not current_password or not new_password:
-        return jsonify({'error': 'Current and new password required'}), 400
-    
-    if len(new_password) < 6:
-        return jsonify({'error': 'New password must be at least 6 characters'}), 400
-    
-    reporters = get_reporters()
-    
-    # Verify current password
-    if username not in reporters:
-        return jsonify({'error': 'User not found'}), 404
-    
-    if not check_password_hash(reporters[username]['password'], current_password):
-        return jsonify({'error': 'Current password is incorrect'}), 401
-    
-    # Update password
-    reporters[username]['password'] = generate_password_hash(new_password)
-    save_json(REPORTERS_FILE, reporters)
-    
-    return jsonify({'success': True, 'message': 'Password changed successfully'})
-
-# Reporter credentials data (embedded to avoid CSV file dependency)
-REPORTER_CREDENTIALS = [
-    {"name": "Aboulenein, Ahmed", "username": "ahmed.aboulenein", "password": "isrcoi"},
-    {"name": "Ahmed, Saqib", "username": "saqib.ahmed", "password": "VtaIrc"},
-    {"name": "Alleyne-Morris, Shawana", "username": "shawana.alleyne-morris", "password": "505eE3"},
-    {"name": "Anand, Nupur", "username": "nupur.anand", "password": "OGbF9J"},
-    {"name": "Azhar, Saeed", "username": "saeed.azhar", "password": "m7Is0j"},
-    {"name": "Baertlein, Lisa P.", "username": "lisa.baertlein", "password": "3Ju3Wb"},
-    {"name": "Banco, Erin", "username": "erin.banco", "password": "wMkhw0"},
-    {"name": "Barbuscia, Davide", "username": "davide.barbuscia", "password": "SOumy4"},
-    {"name": "Bautzer, Tatiana", "username": "tatiana.bautzer", "password": "x8ZQRd"},
-    {"name": "Bensinger, Greg", "username": "greg.bensinger", "password": "OxzLbT"},
-    {"name": "Binnie, Isla", "username": "isla.binnie", "password": "MxO3sq"},
-    {"name": "Brettell, Karen J.", "username": "karen.brettell", "password": "5Wfwcu"},
-    {"name": "Brittain, Blake", "username": "blake.brittain", "password": "83RomE"},
-    {"name": "Brown, Nicholas P.", "username": "nicholas.p.brown", "password": "eJTLFQ"},
-    {"name": "Cai, Kenrick", "username": "kenrick.cai", "password": "H66q4i"},
-    {"name": "Campos, Rodrigo", "username": "rodrigo.campos", "password": "gXTzhk"},
-    {"name": "Carew, Sinead M.", "username": "sinead.carew", "password": "QGAiY5"},
-    {"name": "Catchpole, Dan", "username": "dan.catchpole", "password": "Cgcp7n"},
-    {"name": "Cavale, Siddharth", "username": "siddharth.cavale", "password": "ncz2NL"},
-    {"name": "Chavez, Gertrude", "username": "gertrude.chavez", "password": "NOWLwL"},
-    {"name": "Cherney, Max A.", "username": "max.cherney", "password": "HEP1Ay"},
-    {"name": "Chmielewski, Dawn C.", "username": "dawn.chmielewski", "password": "sFjwWj"},
-    {"name": "Chung, Andrew", "username": "andrew.chung", "password": "sulpg2"},
-    {"name": "Cohen, Luc", "username": "luc.cohen", "password": "tLZt8t"},
-    {"name": "Conlin, Michelle", "username": "michelle.conlin", "password": "Ne29uB"},
-    {"name": "Cooke, Kristina R.", "username": "kristina.cooke", "password": "O2nUzm"},
-    {"name": "Culp, Stephen R.", "username": "stephen.culp", "password": "vyOW3V"},
-    {"name": "Cunningham, Waylon", "username": "waylon.cunningham", "password": "5eS7RJ"},
-    {"name": "Dang, Sheila", "username": "sheila.dang", "password": "AmxX4u"},
-    {"name": "Dastin, Jeffrey", "username": "jeffrey.dastin", "password": "mAnP4c"},
-    {"name": "Delevingne, Lawrence", "username": "lawrence.delevingne", "password": "QAoEDS"},
-    {"name": "Derby, Michael", "username": "michael.derby", "password": "AV2MnB"},
-    {"name": "DiNapoli, Jessica", "username": "jessica.dinapoli", "password": "N60hyD"},
-    {"name": "DiSavino, Scott P.", "username": "scott.disavino", "password": "XAIeq9"},
-    {"name": "Douglas, Leah", "username": "leah.douglas", "password": "023vja"},
-    {"name": "Eckert, Nora", "username": "nora.eckert", "password": "nPIwnl"},
-    {"name": "Erman, Michael D.", "username": "michael.erman", "password": "gPrCnL"},
-    {"name": "Flowers, Bianca", "username": "bianca.flowers", "password": "fxq9qp"},
-    {"name": "Freifeld, Karen", "username": "karen.freifeld", "password": "dLo9IV"},
-    {"name": "French, David J.", "username": "davidj.french", "password": "nI9MDy"},
-    {"name": "Gardner, Timothy", "username": "timothy.gardner", "password": "U70mDI"},
-    {"name": "Gillison, Douglas", "username": "douglas.gillison", "password": "2idb2J"},
-    {"name": "Godoy, Jody", "username": "jody.godoy", "password": "UrU0eP"},
-    {"name": "Groom, Nichola L.", "username": "nichola.groom", "password": "vAesgS"},
-    {"name": "Hall, Kalea", "username": "kalea.hall", "password": "4weehZ"},
-    {"name": "Herbst, Svea A.", "username": "svea.herbst", "password": "rTV2O8"},
-    {"name": "Hickman, Renee", "username": "renee.hickman", "password": "YqKDNk"},
-    {"name": "Hood-Nuño, David", "username": "david.hood", "password": "ZWcmbx"},
-    {"name": "Hu, Krystal", "username": "krystal.hu", "password": "YL4uog"},
-    {"name": "Huffstutter, PJ", "username": "pj.huffstutter", "password": "m4I6Ea"},
-    {"name": "Ingwersen, Julie R.", "username": "julie.ingwersen", "password": "vebx88"},
-    {"name": "Jao, Nicole", "username": "nicole.jao", "password": "W6RcMP"},
-    {"name": "Jeans, David", "username": "david.jeans", "password": "SBdIrS"},
-    {"name": "Jones, Diana", "username": "diana.jones2", "password": "KgeMBZ"},
-    {"name": "Kearney, Laila", "username": "laila.kearney", "password": "lerOfL"},
-    {"name": "Kerber, Ross J.", "username": "ross.kerber", "password": "em8rZp"},
-    {"name": "Khan, Shariq A.", "username": "shariq.khan", "password": "X8B7o1"},
-    {"name": "Kirkham, Chris", "username": "chris.kirkham", "password": "0qxsfs"},
-    {"name": "Knauth, Dietrich", "username": "dietrich.knauth", "password": "TrdWZ8"},
-    {"name": "Koh, Gui Qing", "username": "guiqing.koh", "password": "8zE47J"},
-    {"name": "Krauskopf, Lewis S.", "username": "lewis.krauskopf", "password": "W1KfYc"},
-    {"name": "Landay, Jonathan S.", "username": "jonathan.landay", "password": "t3qK8O"},
-    {"name": "Lang, Hannah", "username": "hannah.lang", "password": "6ZYhdE"},
-    {"name": "Levine, Daniel R.", "username": "dan.levine", "password": "8gZVgu"},
-    {"name": "Levy, Rachael", "username": "rachael.levy", "password": "5yxC6v"},
-    {"name": "Lynch, Sarah N.", "username": "sarah.n.lynch", "password": "KGmRuz"},
-    {"name": "MCLYMORE, ARRIANA", "username": "arriana.mclymore", "password": "P0Pr3p"},
-    {"name": "Matthews, Laura", "username": "laura.matthews", "password": "uNDqpN"},
-    {"name": "McCartney, Georgina", "username": "georgina.mccartney", "password": "1pOFnd"},
-    {"name": "McCaskill, Nolan", "username": "nolan.mccaskill", "password": "HB3bZE"},
-    {"name": "McGee, Suzanne", "username": "suzanne.mcgee", "password": "9tfPq1"},
-    {"name": "McKay, Rich", "username": "rich.mckay", "password": "7SgXrm"},
-    {"name": "McLaughlin, Timothy J.", "username": "tim.mclaughlin", "password": "zyvZHp"},
-    {"name": "Mikolajczak, Chuck", "username": "charles.mikolajczak", "password": "Bxvsw4"},
-    {"name": "Mutikani, Lucia V.", "username": "lucia.mutikani", "password": "6v9mKR"},
-    {"name": "Nellis, Stephen", "username": "stephen.nellis", "password": "t5x582"},
-    {"name": "Niasse, Amina", "username": "amina.niasse", "password": "Bk1pUJ"},
-    {"name": "Oguh, Chibuike", "username": "chibuike.oguh", "password": "F25GdC"},
-    {"name": "Oladipo, Doyinsola", "username": "doyinsola.oladipo", "password": "i3BfD0"},
-    {"name": "Parraga, Marianna", "username": "marianna.parraga", "password": "6qOs8k"},
-    {"name": "Paul, Katie", "username": "katie.paul", "password": "5quivt"},
-    {"name": "Plume, Karl", "username": "karl.plume", "password": "cYjcuI"},
-    {"name": "Polansek, Tom", "username": "thomas.polansek", "password": "YTZBXF"},
-    {"name": "Prentice, Chris", "username": "christine.prentice", "password": "ThCpqP"},
-    {"name": "Queen, Jack", "username": "jack.queen", "password": "h3FkGU"},
-    {"name": "Randewich, Noel", "username": "noel.randewich", "password": "Oul6d4"},
-    {"name": "Raymond, Nate", "username": "nate.raymond", "password": "QerXFR"},
-    {"name": "Respaut, Robin", "username": "robin.respaut", "password": "kdD99a"},
-    {"name": "Roulette, Joey", "username": "joey.roulette", "password": "IWvMoz"},
-    {"name": "Roy, Abhirup", "username": "abhirup.roy", "password": "7PhxxA"},
-    {"name": "Rozen, Courtney", "username": "courtney.rozen", "password": "qYbpog"},
-    {"name": "Saphir, Ann", "username": "ann.saphir", "password": "L7K3GB"},
-    {"name": "Scarcella, Mike", "username": "mike.scarcella", "password": "e1JTdM"},
-    {"name": "Scheyder, Ernest", "username": "ernest.scheyder", "password": "zTLzxn"},
-    {"name": "Schlitz, Heather", "username": "heather.schlitz", "password": "aZj4WW"},
-    {"name": "Seba, Erwin", "username": "erwin.seba", "password": "V2YCbQ"},
-    {"name": "Seetharaman, Deepa", "username": "deepa.seetharaman", "password": "PngRo2"},
-    {"name": "Shepardson, David", "username": "david.shepardson", "password": "t0vKuh"},
-    {"name": "Shirouzu, Norihiko", "username": "norihiko.shirouzu", "password": "OkfbMg"},
-    {"name": "Singh, Rajesh Kumar", "username": "rajeshkumar.singh", "password": "zAihdK"},
-    {"name": "Somasekhar, Arathy", "username": "arathy.s", "password": "WKlDQv"},
-    {"name": "Spector, Mike", "username": "mike.spector", "password": "fiQUpm"},
-    {"name": "Steenhuysen, Julie D.", "username": "julie.steenhuysen", "password": "WxgxB1"},
-    {"name": "Stempel, Jonathan E.", "username": "jon.stempel", "password": "fBuzr8"},
-    {"name": "Stone, Mike", "username": "mike.stone", "password": "9SVtNz"},
-    {"name": "Summerville, Abigail", "username": "abigail.summerville", "password": "00XT4F"},
-    {"name": "Teixeira, Marcelo", "username": "marcelo.teixeira", "password": "gMMg71"},
-    {"name": "Terhune, Chad", "username": "chad.terhune", "password": "XOhG3D"},
-    {"name": "Tracy, Matt", "username": "matt.tracy", "password": "rSteQt"},
-    {"name": "Tsvetkova, Maria", "username": "maria.tsvetkova", "password": "JLhDPt"},
-    {"name": "Valetkevitch, Caroline", "username": "caroline.valetkevitch", "password": "s3nXAc"},
-    {"name": "Valle, Sabrina", "username": "sabrina.valle", "password": "SVALJL"},
-    {"name": "Vicens, AJ", "username": "a.j.vicens", "password": "7ZmHvT"},
-    {"name": "Vinn, Milana", "username": "milana.vinn", "password": "nXpjsd"},
-    {"name": "Volcovici, Valerie", "username": "valerie.volcovici", "password": "Zd7nb9"},
-    {"name": "Wang, Echo", "username": "e.wang", "password": "Z58njU"},
-    {"name": "Wiessner, Daniel", "username": "daniel.wiessner", "password": "153gmC"},
-    {"name": "Williams, Curtis", "username": "curtis.williams", "password": "K9yGJo"},
-    {"name": "Wingrove, Patrick", "username": "patrick.wingrove", "password": "YZpmIK"},
-    {"name": "Winter, Jana", "username": "jana.winter", "password": "ch6nBi"},
-    {"name": "Wolfe, Jan", "username": "jan.wolfe", "password": "6aGKGY"},
-]
-
-@app.route('/api/reload-reporters-from-csv', methods=['POST'])
-def reload_reporters_from_csv():
-    """Reload reporter accounts from embedded credentials data (ADMIN ONLY)"""
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    try:
-        reporters = {}
-        
-        # Add admin account
-        reporters['admin'] = {
-            'name': 'Admin',
-            'is_manager': True,
-            'password': generate_password_hash('admin123')
-        }
-        
-        # Add all reporters from embedded data
-        for rep in REPORTER_CREDENTIALS:
-            username = rep['username']
-            name = rep['name']
-            password = rep['password']
-            
-            reporters[username] = {
-                'name': name,
-                'is_manager': False,
-                'password': generate_password_hash(password)
-            }
-        
-        # Save to reporters.json
-        save_json(REPORTERS_FILE, reporters)
-        
-        return jsonify({
-            'success': True,
-            'message': f'Successfully reloaded {len(reporters) - 1} reporter accounts',
-            'total_accounts': len(reporters)
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/reset-data', methods=['POST'])
-def reset_data():
-    """Reset preferences and assignments (ADMIN ONLY - for testing)"""
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    try:
-        # Clear preferences
-        save_json(PREFERENCES_FILE, {})
-        
-        # Clear assignments
-        save_json(ASSIGNMENTS_FILE, {})
-        
-        # Unlock preferences
-        settings = get_settings()
-        settings['is_locked'] = False
-        save_json(SETTINGS_FILE, settings)
-        
-        return jsonify({
-            'success': True,
-            'message': 'All preferences and assignments cleared. System unlocked.'
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/create-backup', methods=['POST'])
-def trigger_backup():
-    """Manually trigger a backup (ADMIN ONLY)"""
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    success = create_auto_backup()
-    if success:
-        return jsonify({
-            'success': True,
-            'message': 'Backup created successfully'
-        })
-    else:
-        return jsonify({'error': 'Backup failed'}), 500
-
-@app.route('/api/list-backups')
-def list_backups():
-    """List all available backups (ADMIN ONLY)"""
-    if not session.get('is_manager'):
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    try:
-        backup_files = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('auto_backup_')], reverse=True)
-        backups = []
-        
-        for filename in backup_files[:30]:  # Show last 30
-            filepath = os.path.join(BACKUP_DIR, filename)
-            stat = os.stat(filepath)
-            backups.append({
-                'filename': filename,
-                'size': stat.st_size,
-                'created': datetime.fromtimestamp(stat.st_mtime).isoformat()
-            })
-        
-        return jsonify({
-            'success': True,
-            'backups': backups,
-            'total': len(backup_files)
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/initialize-system', methods=['GET'])
-def initialize_system():
-    """PUBLIC ENDPOINT: Initialize reporters.json from embedded credentials (NO AUTH REQUIRED)"""
-    try:
-        reporters = {}
-        
-        # Add admin account
-        reporters['admin'] = {
-            'name': 'Admin',
-            'is_manager': True,
-            'password': generate_password_hash('admin123')
-        }
-        
-        # Add all reporters from embedded data
-        for rep in REPORTER_CREDENTIALS:
-            username = rep['username']
-            name = rep['name']
-            password = rep['password']
-            
-            reporters[username] = {
-                'name': name,
-                'is_manager': False,
-                'password': generate_password_hash(password)
-            }
-        
-        # Save to reporters.json
-        save_json(REPORTERS_FILE, reporters)
-        
-        return jsonify({
-            'success': True,
-            'message': f'Successfully initialized {len(reporters) - 1} reporter accounts + admin',
-            'total_accounts': len(reporters),
-            'note': 'You can now login with your credentials'
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+            save_preferences_to_file(preferences)
+            return jsonify({'success': True})
+        except Exception as e:
+            print(f"Error saving preferences: {e}")
+            return jsonify({'error': f"Error
