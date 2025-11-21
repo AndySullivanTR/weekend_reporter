@@ -1025,5 +1025,43 @@ def list_backups():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/initialize-system', methods=['GET'])
+def initialize_system():
+    """PUBLIC ENDPOINT: Initialize reporters.json from embedded credentials (NO AUTH REQUIRED)"""
+    try:
+        reporters = {}
+        
+        # Add admin account
+        reporters['admin'] = {
+            'name': 'Admin',
+            'is_manager': True,
+            'password': generate_password_hash('admin123')
+        }
+        
+        # Add all reporters from embedded data
+        for rep in REPORTER_CREDENTIALS:
+            username = rep['username']
+            name = rep['name']
+            password = rep['password']
+            
+            reporters[username] = {
+                'name': name,
+                'is_manager': False,
+                'password': generate_password_hash(password)
+            }
+        
+        # Save to reporters.json
+        save_json(REPORTERS_FILE, reporters)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully initialized {len(reporters) - 1} reporter accounts + admin',
+            'total_accounts': len(reporters),
+            'note': 'You can now login with your credentials'
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
