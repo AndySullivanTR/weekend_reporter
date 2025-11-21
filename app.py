@@ -794,6 +794,25 @@ def export_assignments():
         print(f"Error exporting assignments: {e}")
         return jsonify({'error': f"Error exporting assignments: {e}"}), 500
 
+# NEW: manager-only preferences export
+@app.route('/manager/export_preferences', methods=['GET'])
+def export_preferences():
+    """Download the raw reporter_preferences.json file (manager only)."""
+    if 'username' not in session or not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if not os.path.exists(PREFERENCES_FILE):
+        return jsonify({'error': 'Preferences file not found'}), 404
+
+    try:
+        # download_name requires Flask >= 2.0; if older, remove this arg
+        return send_file(PREFERENCES_FILE,
+                         as_attachment=True,
+                         download_name='reporter_preferences.json')
+    except Exception as e:
+        print(f"Error exporting preferences: {e}")
+        return jsonify({'error': f"Error exporting preferences: {e}"}), 500
+
 @app.route('/manager/import', methods=['POST'])
 def import_assignments():
     if 'username' not in session or not session.get('is_manager'):
