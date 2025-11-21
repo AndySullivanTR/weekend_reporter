@@ -664,4 +664,156 @@ def manage_preferences():
             return jsonify({'success': True})
         except Exception as e:
             print(f"Error saving preferences: {e}")
-            return jsonify({'error': f"Error
+            return jsonify({'error': f"Error saving preferences: {e}"}), 400
+    
+    # GET request - return current preferences and settings
+    user_prefs = preferences.get(username, {})
+    
+    # Prepare shift data with user ratings
+    shift_data = []
+    for shift in SHIFTS:
+        shift_id = str(shift['id'])
+        shift_info = shift.copy()
+        shift_info['rating'] = user_prefs.get(shift_id, None)
+        shift_data.append(shift_info)
+    
+    return jsonify({
+        'shifts': shift_data,
+        'settings': settings,
+        'is_locked': is_locked
+    })
+
+@app.route('/manager/assign', methods=['POST'])
+def assign_shifts():
+    if 'username' not in session or not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    preferences = get_preferences()
+    assignments = {}
+    shift_slots = {shift['id']: shift['slots'] for shift in SHIFTS}
+    unfilled_shifts = []
+    
+    # Prepare user shift pedigree for adding new assignments
+    user_shift_pedigree = load_user_shift_pedigree()
+    
+    # Initialize a dictionary to track assigned shift counts per user
+    assigned_shift_counts = {user: [] for user in preferences.keys()}
+    
+    # Compute available users (who have worked shifts in last 6 months)
+    eligible_users = get_eligible_users_for_shift(user_shift_pedigree)
+    
+    # Check if any eligible users exist for assignment
+    if not eligible_users:
+        return jsonify({'error': 'No eligible users available for shift assignments based on the last 6 months.'}), 400
+    
+    for shift in SHIFTS:
+        shift_id = shift['id']
+        available_users = []
+        
+        # First pass: filter only users who prefer this shift (rating 2 or 3) and are eligible
+        for user, prefs in preferences.items():
+            rating = prefs.get(str(shift_id), 0)
+            if rating >= 2 and shift_id not in assignments.get(user, []) and user in eligible_users:
+                available_users.append((user, rating))
+        
+        # Sort users by rating (descending) and a random tie-breaker
+        random.shuffle(available_users)
+        sorted_users = sorted(available_users, key=lambda x: x[1], reverse=True)
+        
+        # Assign shift based on availability and rating
+        assigned_count = 0
+        for user, rating in sorted_users:
+            if assigned_count >= shift_slots[shift_id]:
+                break
+            
+            assignments.setdefault(user, []).append({
+                'id': shift_id,
+                'date': shift['date'],
+                'day': shift['day'],
+                'time': shift['time'],
+                'week': shift['week'],
+                'rating': rating
+            })
+            assigned_shift_counts[user].append({
+                'id': shift['id'],
+                'date': shift['date'],
+                'day': shift['day'],
+                'time': shift['time'],
+                'week': shift['week'],
+                'rating': rating
+            })
+            
+            # Update user shift pedigree
+            user_shift_pedigree.setdefault(user, []).append({
+                'date': shift['date'],
+                'day': shift['day'],
+                'time': shift['time'],
+                'week': shift['week']
+            })
+            assigned_count += 1
+        
+        # Track unfilled shifts
+        if assigned_count < shift_slots[shift_id]:
+            unfilled_shifts.append({
+                'id': shift['id'],
+                'date': shift['date'],
+                'day': shift['day'],
+                'time': shift['time'],
+                'required_slots': shift_slots[shift_id],
+                'filled_slots': assigned_count
+            })
+    
+    # Store assignments, user shift pedigree, and metadata (including assigned_shift_counts) in file
+    save_assignments(assignments, assigned_shift_counts=assigned_shift_counts, coverage_gaps=unfilled_shifts)
+    save_user_shift_pedigree(user_shift_pedigree)
+    
+    return jsonify({'assignments': assignments, 'unfilled_shifts': unfilled_shifts})
+
+@app.route('/manager/assignments')
+def view_assignments():
+    if 'username' not in session or not session.get('is_manager'):
+        return redirect(url_for('login'))
+    
+    assignments = get_assignments()
+    return render_template('view_assignments.html', assignments=assignments, shifts=SHIFTS)
+
+@app.route('/manager/export', methods=['GET'])
+def export_assignments():
+    if 'username' not in session or not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    try:
+        assignments = get_assignments()
+        export_file_path = os.path.join(PARENT_DIR, 'weekend_assignments_export.json')
+        
+        with open(export_file_path, 'w') as f:
+            json.dump(assignments, f, indent=4)
+        
+        return send_file(export_file_path, as_attachment=True)
+    except Exception as e:
+        print(f"Error exporting assignments: {e}")
+        return jsonify({'error': f"Error exporting assignments: {e}"}), 500
+
+@app.route('/manager/import', methods=['POST'])
+def import_assignments():
+    if 'username' not in session or not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    
+    try:
+        data = json.load(file)
+        if 'assignments' in data:
+            save_assignments(data['assignments'])
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Invalid file format'}), 400
+    except Exception as e:
+        print(f"Error importing assignments: {e}")
+        return jsonify({'error': f"Error importing assignments: {e}"}), 400
+
+if __name__ == '__main__':
+    app.run(debug=True)
