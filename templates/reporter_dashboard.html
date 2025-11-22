@@ -744,9 +744,10 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    showAlert('✅ Preferences submitted successfully!', 'success');
-                    alert('✅ SUCCESS! Your shift preferences have been submitted successfully.');
-                    location.reload();
+                    showAlert('✅ Preferences submitted successfully! Your selections are saved.', 'success');
+                    alert('✅ SUCCESS! Your shift preferences have been submitted successfully. Your selections will remain visible on screen.');
+                    submitBtn.textContent = '✓ Submitted - You can still modify and resubmit if needed';
+                    submitBtn.style.background = '#17a2b8';
                 } else {
                     showAlert(data.error || 'Failed to submit preferences.', 'danger');
                     submitBtn.disabled = false;

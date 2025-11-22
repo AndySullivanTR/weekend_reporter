@@ -1,0 +1,623 @@
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
+from datetime import datetime, timedelta
+import json
+import os
+from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
+import random
+
+# Determine the base directory (where this script is located)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(BASE_DIR)
+
+template_folder = os.path.join(BASE_DIR, 'templates')
+app = Flask(__name__, template_folder=template_folder)
+
+app = Flask(__name__, template_folder=template_folder)
+# Fixed secret key for session persistence across restarts
+app.secret_key = 'weekend-reporter-shifts-secret-key-2025'
+
+# Data storage (in production, use a proper database)
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+
+REPORTERS_FILE = os.path.join(DATA_DIR, 'reporters.json')
+PREFERENCES_FILE = os.path.join(DATA_DIR, 'preferences.json')
+SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
+ASSIGNMENTS_FILE = os.path.join(DATA_DIR, 'assignments.json')
+
+# Generate 60 weekend shifts (20 weekends starting Dec 13, 2025)
+# Each shift has 2 slots for reporters
+def generate_shifts():
+    shifts = []
+    start_date = datetime(2025, 12, 13)  # Saturday Dec 13, 2025
+    shift_id = 0
+    
+    for week in range(20):
+        saturday = start_date + timedelta(weeks=week)
+        sunday = saturday + timedelta(days=1)
+        
+        # Saturday shift - 2 reporters
+        shifts.append({
+            'id': shift_id,
+            'date': saturday.strftime('%Y-%m-%d'),
+            'day': 'Saturday',
+            'time': '11:00 AM - 7:00 PM',
+            'slots': 2,
+            'week': week + 1
+        })
+        shift_id += 1
+        
+        # Sunday morning shift - 2 reporters
+        shifts.append({
+            'id': shift_id,
+            'date': sunday.strftime('%Y-%m-%d'),
+            'day': 'Sunday',
+            'time': '8:00 AM - 4:00 PM',
+            'slots': 2,
+            'week': week + 1
+        })
+        shift_id += 1
+        
+        # Sunday evening shift - 2 reporters
+        shifts.append({
+            'id': shift_id,
+            'date': sunday.strftime('%Y-%m-%d'),
+            'day': 'Sunday',
+            'time': '3:00 PM - 10:00 PM',
+            'slots': 2,
+            'week': week + 1
+        })
+        shift_id += 1
+    
+    return shifts
+
+SHIFTS = generate_shifts()
+
+# Initialize data files
+def init_data_files():
+    # Create 121 reporters
+    if not os.path.exists(REPORTERS_FILE):
+        reporters = {}
+        
+        # Manager account
+        reporters['admin'] = {
+            'name': 'Admin',
+            'is_manager': True,
+            'password': generate_password_hash('admin123')
+        }
+        
+        # 121 reporter accounts
+        for i in range(1, 122):
+            username = f'reporter{i}'
+            reporters[username] = {
+                'name': f'Reporter{i}',
+                'is_manager': False,
+                'password': generate_password_hash('password')
+            }
+        
+        with open(REPORTERS_FILE, 'w') as f:
+            json.dump(reporters, f, indent=2)
+    
+    if not os.path.exists(PREFERENCES_FILE):
+        with open(PREFERENCES_FILE, 'w') as f:
+            json.dump({}, f)
+    
+    if not os.path.exists(SETTINGS_FILE):
+        # Default deadline: 7 days from now
+        deadline = (datetime.now() + timedelta(days=7)).isoformat()
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump({'deadline': deadline, 'is_locked': False}, f)
+    
+    if not os.path.exists(ASSIGNMENTS_FILE):
+        with open(ASSIGNMENTS_FILE, 'w') as f:
+            json.dump({}, f)
+
+init_data_files()
+
+# Helper functions
+def load_json(filepath):
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def save_json(filepath, data):
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def get_reporters():
+    return load_json(REPORTERS_FILE)
+
+def get_preferences():
+    return load_json(PREFERENCES_FILE)
+
+def get_settings():
+    return load_json(SETTINGS_FILE)
+
+def get_assignments():
+    return load_json(ASSIGNMENTS_FILE)
+
+# Routes
+@app.route('/')
+def index():
+    if 'username' in session:
+        if session.get('is_manager'):
+            return redirect(url_for('manager_dashboard'))
+        else:
+            return redirect(url_for('reporter_dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        data = request.json
+        username = data.get('username')
+        password = data.get('password')
+        
+        reporters = get_reporters()
+        
+        if username in reporters:
+            if check_password_hash(reporters[username]['password'], password):
+                session['username'] = username
+                session['is_manager'] = reporters[username].get('is_manager', False)
+                return jsonify({'success': True, 'is_manager': session['is_manager']})
+        
+        return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/manager/dashboard')
+def manager_dashboard():
+    if not session.get('is_manager'):
+        return redirect(url_for('login'))
+    
+    reporters = get_reporters()
+    settings = get_settings()
+    preferences = get_preferences()
+    assignments = get_assignments()
+    
+    # Count reporters who have submitted preferences (top 10 + bottom 5)
+    submitted_count = sum(1 for rep, prefs in preferences.items() 
+                         if prefs and len(prefs.get('top_10', [])) == 10 and len(prefs.get('bottom_5', [])) == 5)
+    
+    return render_template('manager_dashboard.html', 
+                         reporters=reporters,
+                         settings=settings,
+                         submitted_count=submitted_count,
+                         total_reporters=len([r for r in reporters.values() if not r.get('is_manager')]),
+                         assignments=assignments,
+                         preferences=preferences,
+                         shifts=SHIFTS)
+
+@app.route('/reporter/dashboard')
+def reporter_dashboard():
+    if 'username' not in session or session.get('is_manager'):
+        return redirect(url_for('login'))
+    
+    settings = get_settings()
+    preferences = get_preferences()
+    assignments = get_assignments()
+    username = session['username']
+    
+    user_prefs = preferences.get(username, {})
+    user_assignments = assignments.get(username, [])
+    
+    # Check if deadline has passed
+    deadline = datetime.fromisoformat(settings['deadline'])
+    is_locked = settings.get('is_locked', False) or datetime.now() > deadline
+    
+    return render_template('reporter_dashboard.html',
+                         username=username,
+                         shifts=SHIFTS,
+                         preferences=user_prefs,
+                         assignments=user_assignments,
+                         deadline=settings['deadline'],
+                         is_locked=is_locked)
+
+@app.route('/api/preferences', methods=['GET', 'POST'])
+def manage_preferences():
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    username = session['username']
+    preferences = get_preferences()
+    settings = get_settings()
+    
+    # Check if locked
+    deadline = datetime.fromisoformat(settings['deadline'])
+    is_locked = settings.get('is_locked', False) or datetime.now() > deadline
+    
+    if request.method == 'POST':
+        if is_locked and not session.get('is_manager'):
+            return jsonify({'error': 'Preferences are locked'}), 403
+        
+        data = request.json
+        
+        # Validate data structure
+        if 'top_10' not in data or 'bottom_5' not in data or 'shift_type_pref' not in data:
+            return jsonify({'error': 'Invalid preference format'}), 400
+        
+        if len(data['top_10']) != 10:
+            return jsonify({'error': 'Must select exactly 10 top preferences'}), 400
+        
+        if len(data['bottom_5']) != 5:
+            return jsonify({'error': 'Must select exactly 5 least wanted shifts'}), 400
+        
+        preferences[username] = {
+            'top_10': data['top_10'],
+            'bottom_5': data['bottom_5'],
+            'shift_type_pref': data['shift_type_pref']
+        }
+        save_json(PREFERENCES_FILE, preferences)
+        return jsonify({'success': True})
+    
+    # GET
+    if session.get('is_manager'):
+        return jsonify(preferences)
+    else:
+        return jsonify({username: preferences.get(username, {})})
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def manage_settings():
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    settings = get_settings()
+    
+    if request.method == 'POST':
+        data = request.json
+        
+        if 'deadline' in data:
+            settings['deadline'] = data['deadline']
+        
+        if 'is_locked' in data:
+            settings['is_locked'] = data['is_locked']
+        
+        save_json(SETTINGS_FILE, settings)
+        return jsonify({'success': True})
+    
+    return jsonify(settings)
+
+@app.route('/api/allocate', methods=['POST'])
+def allocate_shifts():
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    preferences = get_preferences()
+    reporters_data = get_reporters()
+    
+    # Get list of non-manager reporters
+    reporter_list = [user for user, rep in reporters_data.items() if not rep.get('is_manager')]
+    
+    # Validate all reporters have submitted preferences
+    for rep in reporter_list:
+        if rep not in preferences:
+            return jsonify({'error': f'{rep} has not submitted preferences'}), 400
+        
+        prefs = preferences[rep]
+        if len(prefs.get('top_10', [])) != 10 or len(prefs.get('bottom_5', [])) != 5:
+            return jsonify({'error': f'{rep} has incomplete preferences'}), 400
+    
+    # Initialize assignments
+    assignments = {rep: [] for rep in reporter_list}
+    shift_assignments = {shift['id']: [] for shift in SHIFTS}
+    
+    # Set random seed for reproducibility
+    random.seed(42)
+    
+    # SINGLE PHASE: Allocate one shift per reporter
+    print("\n=== REPORTER SHIFT ALLOCATION ===")
+    shuffled_reporters = reporter_list.copy()
+    random.shuffle(shuffled_reporters)
+    
+    for rep in shuffled_reporters:
+        prefs = preferences[rep]
+        top_10 = prefs['top_10']
+        bottom_5 = prefs['bottom_5']
+        
+        # Try to assign from top 10 preferences
+        assigned = False
+        for shift_id in top_10:
+            # Skip if shift is full (2 slots)
+            shift = next(s for s in SHIFTS if s['id'] == shift_id)
+            if len(shift_assignments[shift_id]) >= shift['slots']:
+                continue
+            
+            # Assign shift
+            assignments[rep].append(shift_id)
+            shift_assignments[shift_id].append(rep)
+            assigned = True
+            rank = top_10.index(shift_id) + 1
+            print(f"✓ {rep:15} → Shift {shift_id:2} (preference #{rank})")
+            break
+        
+        # If couldn't assign from top 10, try non-bottom-5 shifts
+        if not assigned:
+            shift_type_pref = prefs.get('shift_type_pref', {})
+            sorted_types = sorted(shift_type_pref.items(), key=lambda x: x[1])
+            
+            for shift_type, _ in sorted_types:
+                for shift in SHIFTS:
+                    shift_id = shift['id']
+                    
+                    # Skip if in bottom 5
+                    if shift_id in bottom_5:
+                        continue
+                    
+                    # Skip if already in top 10 (already tried these)
+                    if shift_id in top_10:
+                        continue
+                    
+                    # Check if matches shift type
+                    shift_matches = False
+                    if shift_type == 'saturday' and shift['day'] == 'Saturday':
+                        shift_matches = True
+                    elif shift_type == 'sunday_morning' and shift['day'] == 'Sunday' and '8:00 AM' in shift['time']:
+                        shift_matches = True
+                    elif shift_type == 'sunday_evening' and shift['day'] == 'Sunday' and '3:00 PM' in shift['time']:
+                        shift_matches = True
+                    
+                    if not shift_matches:
+                        continue
+                    
+                    # Skip if shift is full
+                    if len(shift_assignments[shift_id]) >= shift['slots']:
+                        continue
+                    
+                    # Assign shift
+                    assignments[rep].append(shift_id)
+                    shift_assignments[shift_id].append(rep)
+                    assigned = True
+                    print(f"⚠ {rep:15} → Shift {shift_id:2} (backup assignment, not in top 10)")
+                    break
+                
+                if assigned:
+                    break
+        
+        if not assigned:
+            print(f"✗ {rep:15} → Could not assign shift")
+    
+    # Save assignments
+    save_json(ASSIGNMENTS_FILE, assignments)
+    
+    # Lock preferences
+    settings = get_settings()
+    settings['is_locked'] = True
+    save_json(SETTINGS_FILE, settings)
+    
+    return jsonify({
+        'success': True,
+        'assignments': assignments,
+        'shift_assignments': shift_assignments
+    })
+
+@app.route('/api/backup')
+def backup_data():
+    """Download all data files as JSON for backup"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    backup_data = {
+        'reporters': get_reporters(),
+        'preferences': get_preferences(),
+        'settings': get_settings(),
+        'assignments': get_assignments(),
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    from io import BytesIO
+    output = BytesIO()
+    output.write(json.dumps(backup_data, indent=2).encode('utf-8'))
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype='application/json',
+        as_attachment=True,
+        download_name=f'backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+    )
+
+@app.route('/api/populate-test-data', methods=['POST'])
+def populate_test_data():
+    """Populate random preferences for all reporters (TESTING ONLY)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    reporters = get_reporters()
+    preferences = {}
+    
+    # All 60 shift IDs
+    all_shifts = list(range(60))
+    
+    # Generate random preferences for each non-manager reporter
+    for username, rep_data in reporters.items():
+        if rep_data.get('is_manager'):
+            continue
+        
+        # Shuffle all shifts
+        shuffled = all_shifts.copy()
+        random.shuffle(shuffled)
+        
+        # Top 10 are first 10 from shuffled list
+        top_10 = shuffled[:10]
+        
+        # Bottom 5 are next 5 from shuffled list
+        bottom_5 = shuffled[10:15]
+        
+        # Random shift type preferences (1, 2, 3)
+        shift_types = [1, 2, 3]
+        random.shuffle(shift_types)
+        
+        preferences[username] = {
+            'top_10': top_10,
+            'bottom_5': bottom_5,
+            'shift_type_pref': {
+                'saturday': str(shift_types[0]),
+                'sunday_morning': str(shift_types[1]),
+                'sunday_evening': str(shift_types[2])
+            }
+        }
+    
+    # Save preferences
+    save_json(PREFERENCES_FILE, preferences)
+    
+    return jsonify({
+        'success': True,
+        'message': f'Populated random preferences for {len(preferences)} reporters'
+    })
+
+@app.route('/api/export-excel')
+def export_excel():
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from io import BytesIO
+        
+        assignments = get_assignments()
+        reporters = get_reporters()
+        preferences = get_preferences()
+        
+        # Create workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Reporter Schedule"
+        
+        # Title
+        ws['A1'] = 'Weekend Reporter Shift Schedule - Dec 2025 - Apr 2026'
+        ws['A1'].font = Font(size=16, bold=True)
+        ws.merge_cells('A1:H1')
+        
+        # Headers
+        headers = ['Date', 'Day', 'Time', 'Assigned Reporters', 'Preference Rank', 'Status', 'Week', 'Notes']
+        header_row = 3
+        for col, header in enumerate(headers, start=1):
+            cell = ws.cell(row=header_row, column=col)
+            cell.value = header
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="FF6B35", end_color="FF6B35", fill_type="solid")
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Data
+        row = header_row + 1
+        for shift in SHIFTS:
+            shift_id = shift['id']
+            assigned = []
+            
+            for rep, rep_shifts in assignments.items():
+                if shift_id in rep_shifts:
+                    assigned.append(rep)
+            
+            ws.cell(row=row, column=1).value = shift['date']
+            ws.cell(row=row, column=2).value = shift['day']
+            ws.cell(row=row, column=3).value = shift['time']
+            
+            # Assigned reporters (can be 0, 1, or 2)
+            if assigned:
+                rep_names = []
+                pref_ranks = []
+                for rep in assigned:
+                    rep_names.append(reporters[rep]['name'])
+                    
+                    if rep in preferences:
+                        prefs = preferences[rep]
+                        if shift_id in prefs.get('top_10', []):
+                            rank = prefs['top_10'].index(shift_id) + 1
+                            pref_ranks.append(f"#{rank}")
+                        elif shift_id in prefs.get('bottom_5', []):
+                            pref_ranks.append("Bottom-5")
+                        else:
+                            pref_ranks.append("N/A")
+                    else:
+                        pref_ranks.append("N/A")
+                
+                ws.cell(row=row, column=4).value = ", ".join(rep_names)
+                ws.cell(row=row, column=5).value = ", ".join(pref_ranks)
+            else:
+                ws.cell(row=row, column=4).value = "VACANT"
+                ws.cell(row=row, column=4).font = Font(color="FF0000", bold=True)
+            
+            # Status
+            filled = len(assigned)
+            total = shift['slots']
+            if filled >= total:
+                ws.cell(row=row, column=6).value = "FILLED"
+                ws.cell(row=row, column=6).fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            else:
+                ws.cell(row=row, column=6).value = f"VACANT ({total - filled})"
+                ws.cell(row=row, column=6).fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            
+            ws.cell(row=row, column=7).value = shift['week']
+            
+            row += 1
+        
+        # Reporter summary
+        row += 2
+        ws.cell(row=row, column=1).value = "Reporter Summary"
+        ws.cell(row=row, column=1).font = Font(size=14, bold=True)
+        
+        row += 1
+        summary_headers = ['Reporter', 'Shifts Assigned', 'Shift Details', 'Status']
+        for col, header in enumerate(summary_headers, start=1):
+            cell = ws.cell(row=row, column=col)
+            cell.value = header
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="FF6B35", end_color="FF6B35", fill_type="solid")
+        
+        row += 1
+        for rep, rep_data in reporters.items():
+            if rep_data.get('is_manager'):
+                continue
+            
+            ws.cell(row=row, column=1).value = rep_data['name']
+            
+            rep_shifts = assignments.get(rep, [])
+            ws.cell(row=row, column=2).value = len(rep_shifts)
+            
+            shift_details = []
+            for shift_id in rep_shifts:
+                shift = next(s for s in SHIFTS if s['id'] == shift_id)
+                shift_details.append(f"{shift['date']} {shift['day']} {shift['time']}")
+            ws.cell(row=row, column=3).value = "; ".join(shift_details) if shift_details else "None"
+            
+            if len(rep_shifts) == 1:
+                ws.cell(row=row, column=4).value = "Complete"
+                ws.cell(row=row, column=4).fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            else:
+                ws.cell(row=row, column=4).value = f"Incomplete ({len(rep_shifts)}/1)"
+                ws.cell(row=row, column=4).fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            
+            row += 1
+        
+        # Adjust column widths
+        ws.column_dimensions['A'].width = 12
+        ws.column_dimensions['B'].width = 12
+        ws.column_dimensions['C'].width = 20
+        ws.column_dimensions['D'].width = 30
+        ws.column_dimensions['E'].width = 15
+        ws.column_dimensions['F'].width = 15
+        ws.column_dimensions['G'].width = 10
+        ws.column_dimensions['H'].width = 30
+        
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'reporter_schedule_{datetime.now().strftime("%Y%m%d")}.xlsx'
+        )
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)

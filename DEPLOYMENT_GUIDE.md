@@ -63,7 +63,8 @@ git push -u origin main
    - **Runtime**: Python 3
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `gunicorn app:app`
-   - **Plan**: Free
+   - **Plan**: Starter (required for persistent storage)
+   - **Disk**: Verify 1GB disk is configured for `/opt/render/project/src/data`
 
 5. **Deploy**
    - Click "Create Web Service"
@@ -124,11 +125,12 @@ Questions? Contact [YOUR NAME]
    - Click "Export to Excel" for distribution
    - Click "Download Backup" to save JSON data
 
-5. **Important: Download Backup Before App Sleeps**
-   - Free tier apps sleep after 15 minutes of inactivity
-   - Data persists during sleep
-   - BUT: Data is ephemeral and could be lost on restart
-   - Always download backup after allocation!
+5. **Data Persistence**
+   - This app uses persistent disk storage (1GB mounted at `/data`)
+   - All preferences, assignments, and settings survive restarts and deployments
+   - Automatic backups are created in `/data/backups/` (keeps last 30)
+   - Manual backups can be downloaded via "Download Backup" button
+   - Recommended: Download backup after allocation for extra safety
 
 ### 5. Troubleshooting
 
@@ -137,14 +139,15 @@ Questions? Contact [YOUR NAME]
 - Look at "Logs" tab for error messages
 
 **Problem: App is slow to load**
-- Cause: Free tier apps "sleep" after 15 min inactivity
-- Solution: First request takes ~30 seconds to wake up
-- This is normal on free tier
+- Cause: Starter plan apps may spin down after inactivity
+- Solution: First request after inactivity takes ~30 seconds to wake up
+- This is normal behavior for cost efficiency
 
 **Problem: Data disappeared**
-- Cause: Render free tier uses ephemeral storage
-- Solution: Use "Download Backup" button regularly
-- Consider upgrading to paid tier with persistent disk
+- This should NOT happen with persistent disk configured
+- Check Render dashboard to verify disk is mounted
+- Check `/data/backups/` folder for automatic backups
+- If issue persists, contact Render support
 
 **Problem: Can't connect GitHub repository**
 - Solution: Make sure repository is not private, or grant Render access to private repos
@@ -169,18 +172,25 @@ When you need to make changes:
 
 ### 7. Cost Considerations
 
-**Free Tier Limits:**
-- 750 hours/month runtime (plenty for this use)
-- Apps sleep after 15 min inactivity
-- Ephemeral storage (data resets on restart)
+**Current Configuration: Starter Plan ($7/month)**
+- Includes persistent disk storage (1GB)
 - HTTP/2 and HTTPS included
+- App may spin down after inactivity (not always-on)
+- Sufficient for 119 reporters and preference collection
 
-**When to Upgrade:**
-- Need persistent storage: $7/month (includes PostgreSQL)
-- Need always-on service: $7/month
-- High traffic: May need more resources
+**What You're Getting:**
+- ✅ Persistent storage - data survives restarts
+- ✅ Automatic backups stored on disk
+- ✅ Professional HTTPS endpoint
+- ✅ Auto-deployment from GitHub
 
-For a 1-2 week preference collection period, **free tier is perfect**.
+**If You Need More:**
+- Always-on service: Upgrade to Standard plan ($25/month)
+- More storage: Can add additional disk space
+- High traffic/performance: Standard or Pro plans
+
+**Cost vs Benefit:**
+For a multi-week preference collection period managing 119 reporters, the **Starter plan ($7/month) is appropriate and cost-effective**.
 
 ### 8. Best Practices
 
@@ -191,8 +201,9 @@ For a 1-2 week preference collection period, **free tier is perfect**.
 
 **During Collection Period:**
 - Check dashboard daily for submissions
-- Download backup every few days
-- Keep the app active (visit URL daily to prevent sleep)
+- Data is automatically backed up after each preference submission
+- App may spin down after inactivity, but data persists
+- Optional: Download manual backup weekly for extra security
 
 **After Allocation:**
 - Export Excel immediately

@@ -5,6 +5,7 @@ import os
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import random
+import fcntl
 
 # Determine the base directory (where this script is located)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -123,8 +124,15 @@ def load_json(filepath):
         return json.load(f)
 
 def save_json(filepath, data):
+    """Save JSON with file locking to prevent race conditions"""
     with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2)
+        # Acquire exclusive lock
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            json.dump(data, f, indent=2)
+        finally:
+            # Release lock
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 def get_reporters():
     return load_json(REPORTERS_FILE)
