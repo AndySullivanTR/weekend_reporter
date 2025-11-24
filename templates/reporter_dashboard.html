@@ -467,7 +467,7 @@
     
     <script>
         const shifts = {{ shifts | tojson }};
-        const existingPrefs = {{ preferences.get(username, {}) | tojson }};
+        const existingPrefs = {{ preferences | tojson }};
         const isLocked = {{ is_locked | tojson }};
         
         let topPreferences = existingPrefs.top_10 || [];
