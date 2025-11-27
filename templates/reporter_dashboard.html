@@ -375,11 +375,11 @@
         
         {% if is_locked %}
         <div class="status-bar locked">
-            <strong>⚠️ Preferences are locked.</strong> The submission deadline has passed. Your selections are final.
+            <strong>⚠️ Preferences are locked.</strong> Your selections are final.
         </div>
         {% else %}
         <div class="status-bar">
-            <strong>Deadline: {{ deadline }}</strong> | Please submit your preferences before the deadline.
+            <strong>Status: Open for submissions</strong> | Please submit your preferences.
         </div>
         {% endif %}
         
@@ -400,7 +400,7 @@
         <div class="instructions">
             <h3>📋 How to Submit Your Preferences</h3>
             <ol>
-                <li><strong>Rank your general shift preference</strong> (1=most preferred, 3=least preferred)</li>
+                <li><strong>Rank your general shift preference</strong> (1=most preferred, 4=least preferred)</li>
                 <li><strong>Browse the calendar below</strong> - Weekend shift days are highlighted</li>
                 <li><strong>Click shift times to select:</strong> First 10 clicks = Top preferences (green), Next 5 clicks = Bottom preferences (red)</li>
                 <li><strong>Click again to deselect</strong> a shift if you change your mind</li>
@@ -412,12 +412,23 @@
         <div class="shift-type-prefs">
             <h3>General Shift Type Preference</h3>
             <div class="shift-type-item">
-                <label>Saturday 11 AM - 7 PM</label>
-                <select id="pref-saturday" class="shift-type-select">
+                <label>Saturday 8 AM - 4 PM</label>
+                <select id="pref-saturday-morning" class="shift-type-select">
                     <option value="">-</option>
                     <option value="1">1st</option>
                     <option value="2">2nd</option>
                     <option value="3">3rd</option>
+                    <option value="4">4th</option>
+                </select>
+            </div>
+            <div class="shift-type-item">
+                <label>Saturday 3 PM - 10 PM</label>
+                <select id="pref-saturday-evening" class="shift-type-select">
+                    <option value="">-</option>
+                    <option value="1">1st</option>
+                    <option value="2">2nd</option>
+                    <option value="3">3rd</option>
+                    <option value="4">4th</option>
                 </select>
             </div>
             <div class="shift-type-item">
@@ -427,6 +438,7 @@
                     <option value="1">1st</option>
                     <option value="2">2nd</option>
                     <option value="3">3rd</option>
+                    <option value="4">4th</option>
                 </select>
             </div>
             <div class="shift-type-item">
@@ -436,6 +448,7 @@
                     <option value="1">1st</option>
                     <option value="2">2nd</option>
                     <option value="3">3rd</option>
+                    <option value="4">4th</option>
                 </select>
             </div>
         </div>
@@ -475,7 +488,8 @@
         
         // Load existing shift type preferences
         if (existingPrefs.shift_type_pref) {
-            document.getElementById('pref-saturday').value = existingPrefs.shift_type_pref.saturday || '';
+            document.getElementById('pref-saturday-morning').value = existingPrefs.shift_type_pref.saturday_morning || '';
+            document.getElementById('pref-saturday-evening').value = existingPrefs.shift_type_pref.saturday_evening || '';
             document.getElementById('pref-sunday-morning').value = existingPrefs.shift_type_pref.sunday_morning || '';
             document.getElementById('pref-sunday-evening').value = existingPrefs.shift_type_pref.sunday_evening || '';
         }
@@ -604,9 +618,7 @@
                                     
                                     // Shift time label
                                     let timeLabel = '';
-                                    if (shift.time.includes('11:00 AM')) {
-                                        timeLabel = '11am-7pm';
-                                    } else if (shift.time.includes('8:00 AM')) {
+                                    if (shift.time.includes('8:00 AM')) {
                                         timeLabel = '8am-4pm';
                                     } else if (shift.time.includes('3:00 PM')) {
                                         timeLabel = '3pm-10pm';
@@ -692,20 +704,21 @@
         
         document.getElementById('submit-btn')?.addEventListener('click', async () => {
             // Validate shift type preferences
-            const satPref = document.getElementById('pref-saturday').value;
+            const satMornPref = document.getElementById('pref-saturday-morning').value;
+            const satEvePref = document.getElementById('pref-saturday-evening').value;
             const sunMornPref = document.getElementById('pref-sunday-morning').value;
             const sunEvePref = document.getElementById('pref-sunday-evening').value;
             
-            if (!satPref || !sunMornPref || !sunEvePref) {
-                alert('⚠️ Please rank all three shift types (Saturday, Sunday Morning, Sunday Evening) before submitting.');
+            if (!satMornPref || !satEvePref || !sunMornPref || !sunEvePref) {
+                alert('⚠️ Please rank all four shift types before submitting.');
                 return;
             }
             
             // Check for duplicate rankings
-            const rankings = [satPref, sunMornPref, sunEvePref];
+            const rankings = [satMornPref, satEvePref, sunMornPref, sunEvePref];
             const uniqueRankings = new Set(rankings);
-            if (uniqueRankings.size !== 3) {
-                alert('⚠️ Each shift type must have a different ranking. Please use 1, 2, and 3 (one for each shift type).');
+            if (uniqueRankings.size !== 4) {
+                alert('⚠️ Each shift type must have a different ranking. Please use 1, 2, 3, and 4 (one for each shift type).');
                 return;
             }
             
@@ -734,7 +747,8 @@
                         top_10: topPreferences,
                         bottom_5: bottomPreferences,
                         shift_type_pref: {
-                            saturday: satPref,
+                            saturday_morning: satMornPref,
+                            saturday_evening: satEvePref,
                             sunday_morning: sunMornPref,
                             sunday_evening: sunEvePref
                         }

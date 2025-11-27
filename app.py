@@ -5,7 +5,12 @@ import os
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import random
-import fcntl
+try:
+    import fcntl
+    HAS_FCNTL = True
+except ImportError:
+    # fcntl is not available on Windows
+    HAS_FCNTL = False
 
 # Determine the base directory (where this script is located)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -29,8 +34,9 @@ PREFERENCES_FILE = os.path.join(DATA_DIR, 'preferences.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 ASSIGNMENTS_FILE = os.path.join(DATA_DIR, 'assignments.json')
 
-# Generate 63 weekend shifts (21 weekends starting Dec 13, 2025)
-# Each shift has 2 slots for reporters
+# Generate 84 weekend shifts (21 weekends starting Dec 13, 2025)
+# 4 shifts per weekend: Sat morning, Sat evening, Sun morning, Sun evening
+# Total capacity: 126 slots (for 124 reporters with 2 slots remaining)
 def generate_shifts():
     shifts = []
     start_date = datetime(2025, 12, 13)  # Saturday Dec 13, 2025
@@ -40,13 +46,24 @@ def generate_shifts():
         saturday = start_date + timedelta(weeks=week)
         sunday = saturday + timedelta(days=1)
         
-        # Saturday shift - 2 reporters
+        # Saturday morning shift - 1 reporter
         shifts.append({
             'id': shift_id,
             'date': saturday.strftime('%Y-%m-%d'),
             'day': 'Saturday',
-            'time': '11:00 AM - 7:00 PM',
-            'slots': 2,
+            'time': '8:00 AM - 4:00 PM',
+            'slots': 1,
+            'week': week + 1
+        })
+        shift_id += 1
+        
+        # Saturday evening shift - 1 reporter
+        shifts.append({
+            'id': shift_id,
+            'date': saturday.strftime('%Y-%m-%d'),
+            'day': 'Saturday',
+            'time': '3:00 PM - 10:00 PM',
+            'slots': 1,
             'week': week + 1
         })
         shift_id += 1
@@ -79,7 +96,7 @@ SHIFTS = generate_shifts()
 
 # Initialize data files
 def init_data_files():
-    # Create 119 reporters
+    # Create 124 reporters (use reload-reporters-from-csv endpoint to load actual credentials)
     if not os.path.exists(REPORTERS_FILE):
         reporters = {}
         
@@ -90,8 +107,8 @@ def init_data_files():
             'password': generate_password_hash('admin123')
         }
         
-        # 119 reporter accounts
-        for i in range(1, 120):
+        # 124 reporter accounts (placeholder - use reload endpoint for real credentials)
+        for i in range(1, 125):
             username = f'reporter{i}'
             reporters[username] = {
                 'name': f'Reporter{i}',
@@ -124,15 +141,17 @@ def load_json(filepath):
         return json.load(f)
 
 def save_json(filepath, data):
-    """Save JSON with file locking to prevent race conditions"""
+    """Save JSON with file locking to prevent race conditions (Unix only)"""
     with open(filepath, 'w') as f:
-        # Acquire exclusive lock
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        if HAS_FCNTL:
+            # Acquire exclusive lock (Unix only)
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             json.dump(data, f, indent=2)
         finally:
-            # Release lock
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            if HAS_FCNTL:
+                # Release lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 def get_reporters():
     return load_json(REPORTERS_FILE)
@@ -271,25 +290,9 @@ def reporter_dashboard():
     user_prefs = preferences.get(username, {})
     user_assignments = assignments.get(username, [])
     
-    # Check if deadline has passed - with timezone-safe handling
-    try:
-        deadline_str = settings['deadline']
-        if 'T' in deadline_str:
-            deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-            deadline = deadline.replace(tzinfo=None)
-        else:
-            deadline = datetime.fromisoformat(deadline_str)
-        
-        is_locked = settings.get('is_locked', False) or datetime.now() > deadline
-    except (ValueError, KeyError, AttributeError) as e:
-        print(f"Warning: Could not parse deadline: {e}")
-        is_locked = settings.get('is_locked', False)
-    
-    # Format deadline for display
-    try:
-        formatted_deadline = format_deadline(settings['deadline'])
-    except Exception as e:
-        formatted_deadline = settings.get('deadline', 'Not set')
+    # Check if locked (no deadline check)
+    is_locked = settings.get('is_locked', False)
+    formatted_deadline = 'No deadline'
     
     return render_template('reporter_dashboard.html',
                          username=username,
@@ -308,18 +311,8 @@ def manage_preferences():
     preferences = get_preferences()
     settings = get_settings()
     
-    # Check if locked - with timezone-safe handling
-    try:
-        deadline_str = settings['deadline']
-        if 'T' in deadline_str:
-            deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-            deadline = deadline.replace(tzinfo=None)
-        else:
-            deadline = datetime.fromisoformat(deadline_str)
-        
-        is_locked = settings.get('is_locked', False) or datetime.now() > deadline
-    except (ValueError, KeyError, AttributeError):
-        is_locked = settings.get('is_locked', False)
+    # Check if locked (no deadline check)
+    is_locked = settings.get('is_locked', False)
     
     if request.method == 'POST':
         if is_locked and not session.get('is_manager'):
@@ -947,6 +940,10 @@ REPORTER_CREDENTIALS = [
     {"name": "Wingrove, Patrick", "username": "patrick.wingrove", "password": "YZpmIK"},
     {"name": "Winter, Jana", "username": "jana.winter", "password": "ch6nBi"},
     {"name": "Wolfe, Jan", "username": "jan.wolfe", "password": "6aGKGY"},
+    {"name": "Thomas, David", "username": "david.thomas", "password": "2nq5q6"},
+    {"name": "Merken, Sara", "username": "sara.merken", "password": "GAftyu"},
+    {"name": "Sloan, Karen", "username": "karen.sloan", "password": "s0lSlf"},
+    {"name": "TEST ACCOUNT", "username": "test", "password": "test123"},
 ]
 
 @app.route('/api/reload-reporters-from-csv', methods=['POST'])

@@ -332,6 +332,12 @@
                 <button class="btn btn-warning" onclick="lockPreferences()">
                     {% if settings.is_locked %}Unlock{% else %}Lock{% endif %} Preferences
                 </button>
+                <button class="btn btn-primary" onclick="reloadReporters()">
+                    Reload Reporters from CSV
+                </button>
+                <button class="btn btn-primary" onclick="downloadBackup()">
+                    Download Backup
+                </button>
             </div>
 
         </div>
@@ -570,7 +576,7 @@
         }
         
         async function reloadReporters() {
-            if (!confirm('⚠️ WARNING: This will reload all 119 reporter accounts from the CSV data. Any custom passwords will be reset. Continue?')) {
+            if (!confirm('⚠️ WARNING: This will reload all 124 reporter accounts from the CSV data. Any custom passwords will be reset. Continue?')) {
                 return;
             }
             
