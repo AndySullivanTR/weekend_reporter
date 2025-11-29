@@ -306,7 +306,7 @@
                 <div class="stat-label">Preferences Submitted</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">121</div>
+                <div class="stat-number">124</div>
                 <div class="stat-label">Total Shifts (20 weeks fully filled + week 21 partial)</div>
             </div>
             <div class="stat-card">
@@ -357,7 +357,7 @@
                 </thead>
                 <tbody>
                     {% for username, reporter in reporters.items() %}
-                        {% if not reporter.is_manager %}
+                        {% if not reporter.is_manager and username != 'test' %}
                         <tr>
                             <td>{{ reporter.name }}</td>
                             <td>
@@ -383,7 +383,7 @@
                             </td>
                             <td>
                                 {% if assignments.get(username) %}
-                                    <span class="status-badge status-assigned">Assigned ({{ assignments[username]|length }}/1)</span>
+                                    <span class="status-badge status-assigned">Assigned</span>
                                 {% elif preferences.get(username) and preferences[username].get('top_10')|length == 10 and preferences[username].get('bottom_5')|length == 5 %}
                                     <span class="status-badge status-complete">Complete</span>
                                 {% else %}
@@ -551,7 +551,7 @@
         }
         
         async function populateTestData() {
-            if (!confirm('This will populate random preferences for all 121 reporters. Continue?')) {
+            if (!confirm('This will populate random preferences for all 124 reporters (excluding TEST). Continue?')) {
                 return;
             }
             

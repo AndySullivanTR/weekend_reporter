@@ -36,7 +36,7 @@ ASSIGNMENTS_FILE = os.path.join(DATA_DIR, 'assignments.json')
 
 # Generate 84 weekend shifts (21 weekends starting Dec 13, 2025)
 # 4 shifts per weekend: Sat morning, Sat evening, Sun morning, Sun evening
-# Total capacity: 126 slots (for 124 reporters with 2 slots remaining)
+# Total capacity: 126 slots (for 124 reporters - excludes TEST account)
 def generate_shifts():
     shifts = []
     start_date = datetime(2025, 12, 13)  # Saturday Dec 13, 2025
@@ -381,7 +381,7 @@ def allocate_shifts():
     reporters_data = get_reporters()
     
     # Get list of non-manager reporters
-    reporter_list = [user for user, rep in reporters_data.items() if not rep.get('is_manager')]
+    reporter_list = [user for user, rep in reporters_data.items() if not rep.get('is_manager') and user != 'test']
     
     # Separate reporters into those WITH and WITHOUT preferences
     reporters_with_prefs = []
@@ -600,7 +600,7 @@ def populate_test_data():
     
     # Generate random preferences for each non-manager reporter
     for username, rep_data in reporters.items():
-        if rep_data.get('is_manager'):
+        if rep_data.get('is_manager') or username == 'test':
             continue
         
         # Shuffle all shifts
