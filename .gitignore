@@ -36,6 +36,11 @@ data/
 mail_merge_*.csv
 notifications_*.csv
 
+# Credential files (contain passwords - MUST NOT be in git)
+reporter_credentials.csv
+password_summary.txt
+reporter_login_emails.txt
+
 # IDE
 .vscode/
 .idea/
