@@ -36,7 +36,7 @@ ASSIGNMENTS_FILE = os.path.join(DATA_DIR, 'assignments.json')
 
 # Generate 84 weekend shifts (21 weekends starting Dec 13, 2025)
 # 4 shifts per weekend: Sat morning, Sat evening, Sun morning, Sun evening
-# Total capacity: 126 slots (for 124 reporters - excludes TEST account)
+# Total capacity: 126 slots (for 123 reporters - excludes TEST account)
 def generate_shifts():
     shifts = []
     start_date = datetime(2025, 12, 13)  # Saturday Dec 13, 2025
@@ -96,7 +96,7 @@ SHIFTS = generate_shifts()
 
 # Initialize data files
 def init_data_files():
-    # Create 124 reporters (use reload-reporters-from-csv endpoint to load actual credentials)
+    # Create 123 reporters (use reload-reporters-from-csv endpoint to load actual credentials)
     if not os.path.exists(REPORTERS_FILE):
         reporters = {}
         
@@ -107,8 +107,8 @@ def init_data_files():
             'password': generate_password_hash('admin123')
         }
         
-        # 124 reporter accounts (placeholder - use reload endpoint for real credentials)
-        for i in range(1, 125):
+        # 123 reporter accounts (placeholder - use reload endpoint for real credentials)
+        for i in range(1, 124):
             username = f'reporter{i}'
             reporters[username] = {
                 'name': f'Reporter{i}',
@@ -941,7 +941,6 @@ REPORTER_CREDENTIALS = [
     {"name": "Winter, Jana", "username": "jana.winter", "password": "ch6nBi"},
     {"name": "Wolfe, Jan", "username": "jan.wolfe", "password": "6aGKGY"},
     {"name": "Thomas, David", "username": "david.thomas", "password": "2nq5q6"},
-    {"name": "Merken, Sara", "username": "sara.merken", "password": "GAftyu"},
     {"name": "Sloan, Karen", "username": "karen.sloan", "password": "s0lSlf"},
     {"name": "TEST ACCOUNT", "username": "test", "password": "test123"},
 ]

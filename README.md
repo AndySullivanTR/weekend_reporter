@@ -204,6 +204,194 @@ shifts.append({
 - Check console logs for specific error messages
 - Ensure no conflicts in shift availability
 
+## API Endpoints
+
+### Authentication Required Endpoints
+
+All endpoints require an active session (login required). Manager endpoints require `is_manager: true`.
+
+#### Public Endpoints
+
+**GET `/`**
+- Redirects to appropriate dashboard based on login status
+- No authentication required initially, redirects to `/login` if not authenticated
+
+**GET `/login`**
+- Returns login page
+- POST: Authenticate user with username/password
+  ```json
+  {
+    "username": "reporter1",
+    "password": "password"
+  }
+  ```
+
+**GET `/logout`**
+- Clears session and redirects to login
+
+**GET `/initialize-system`**
+- Public endpoint (no auth required)
+- Initializes reporters.json from embedded REPORTER_CREDENTIALS
+- Useful for first-time setup or emergency recovery
+- Response: `{ "success": true, "total_accounts": 124, "message": "..." }`
+
+#### Reporter Endpoints
+
+**GET `/reporter/dashboard`**
+- Returns reporter dashboard HTML
+- Authentication: Reporter account required
+
+**GET `/api/preferences`**
+- Returns preferences for the logged-in reporter
+- Response: `{ "username": { "top_10": [...], "bottom_5": [...], "shift_type_pref": {...} } }`
+
+**POST `/api/preferences`**
+- Submit or update reporter preferences
+- Body:
+  ```json
+  {
+    "top_10": [0, 5, 12, 18, 24, 30, 36, 42, 48, 54],
+    "bottom_5": [3, 9, 15, 21, 27],
+    "shift_type_pref": {
+      "saturday": "1",
+      "sunday_morning": "2",
+      "sunday_evening": "3"
+    }
+  }
+  ```
+- Creates automatic backup after submission
+- Returns: `{ "success": true }`
+
+**POST `/api/change-password`**
+- Change password for logged-in user (reporter or manager)
+- Body:
+  ```json
+  {
+    "current_password": "oldpass",
+    "new_password": "newpass"
+  }
+  ```
+- Min password length: 6 characters
+- Returns: `{ "success": true, "message": "Password changed successfully" }`
+
+#### Manager Endpoints
+
+**GET `/manager/dashboard`**
+- Returns manager dashboard HTML
+- Authentication: Manager account required
+
+**GET `/api/preferences`** (Manager view)
+- Returns ALL reporter preferences
+- Response: `{ "reporter1": {...}, "reporter2": {...}, ... }`
+
+**GET `/api/settings`**
+- Returns current settings
+- Response: `{ "deadline": "2025-12-01T00:00:00Z", "is_locked": false }`
+
+**POST `/api/settings`**
+- Update deadline or lock status
+- Body (optional fields):
+  ```json
+  {
+    "deadline": "2025-12-15T23:59:59Z",
+    "is_locked": true
+  }
+  ```
+
+**POST `/api/allocate`**
+- Run shift allocation algorithm
+- Creates backup before allocation
+- Automatically locks preferences
+- Returns:
+  ```json
+  {
+    "success": true,
+    "assignments": { "reporter1": [5, 42], ... },
+    "shift_assignments": { "0": ["reporter3"], ... },
+    "warnings": ["Reporter X has incomplete preferences"],
+    "reporters_with_prefs": 120,
+    "reporters_without_prefs": 3
+  }
+  ```
+
+**GET `/api/export-excel`**
+- Download schedule as Excel file (.xlsx)
+- Includes:
+  - Full shift schedule with assigned reporters
+  - Preference rankings for each assignment
+  - Status (filled/vacant)
+  - Reporter summary table
+- Returns: Excel file download
+
+**GET `/api/backup`**
+- Download complete system backup as JSON
+- Includes all data files: reporters, preferences, settings, assignments
+- Filename: `backup_YYYYMMDD_HHMMSS.json`
+- Returns: JSON file download
+
+**POST `/api/populate-test-data`**
+- Generate random preferences for all reporters (TESTING ONLY)
+- Useful for development/testing
+- Returns: `{ "success": true, "message": "Populated random preferences for N reporters" }`
+
+**POST `/api/create-backup`**
+- Manually trigger an automatic backup
+- Saves to `data/backups/auto_backup_{timestamp}.json`
+- Returns: `{ "success": true, "message": "Backup created successfully" }`
+
+**GET `/api/list-backups`**
+- List last 30 automatic backups
+- Returns:
+  ```json
+  {
+    "success": true,
+    "backups": [
+      {
+        "filename": "auto_backup_20251201_143022.json",
+        "size": 45678,
+        "created": "2025-12-01T14:30:22"
+      }
+    ],
+    "total": 30
+  }
+  ```
+
+#### Emergency/Administrative Endpoints
+
+**POST `/api/reload-reporters-from-csv`** ⚠️
+- **DANGER**: Resets ALL reporter accounts to embedded credentials
+- Overwrites reporters.json completely
+- **Wipes all password changes**
+- Preserves preferences.json (but orphans may exist)
+- Use only for: Initial setup, corrupted data recovery
+- Not accessible from UI (removed for safety)
+- Returns: `{ "success": true, "message": "Successfully reloaded N reporter accounts", "total_accounts": 124 }`
+
+**POST `/api/reset-data`** ⚠️
+- **DANGER**: Clears ALL preferences and assignments
+- Creates backup before reset
+- Unlocks preferences
+- Use only for: Starting fresh, testing
+- Returns: `{ "success": true, "message": "All preferences and assignments cleared..." }`
+
+### Response Status Codes
+
+- `200`: Success
+- `401`: Unauthorized (invalid credentials)
+- `403`: Forbidden (insufficient permissions, or preferences locked)
+- `404`: Not found
+- `500`: Server error
+
+### Notes on Data Persistence
+
+- All data stored in `data/*.json` files
+- On Render.com with persistent disk at `/opt/render/project/src/data`, data survives deployments
+- Automatic backups created:
+  - After each preference submission
+  - Before allocation
+  - Manual trigger via `/api/create-backup`
+- Last 30 backups retained automatically
+
 ## Support
 
 For issues or questions:

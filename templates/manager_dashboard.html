@@ -329,12 +329,6 @@
                 <button class="btn btn-primary" onclick="exportExcel()">
                     Download Schedule
                 </button>
-                <button class="btn btn-warning" onclick="lockPreferences()">
-                    {% if settings.is_locked %}Unlock{% else %}Lock{% endif %} Preferences
-                </button>
-                <button class="btn btn-primary" onclick="reloadReporters()">
-                    Reload Reporters from CSV
-                </button>
                 <button class="btn btn-primary" onclick="downloadBackup()">
                     Download Backup
                 </button>
@@ -486,37 +480,6 @@
             }
         }
         
-        async function lockPreferences() {
-            const isLocked = {{ settings.is_locked | tojson }};
-            
-            if (!confirm(`Are you sure you want to ${isLocked ? 'unlock' : 'lock'} preferences?`)) {
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/settings', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        is_locked: !isLocked
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showAlert(`✅ Preferences ${!isLocked ? 'locked' : 'unlocked'}!`, 'success');
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    showAlert('Failed to update lock status.', 'danger');
-                }
-            } catch (error) {
-                showAlert('An error occurred.', 'danger');
-            }
-        }
-        
         async function allocateShifts() {
             if (!confirm('This will allocate shifts based on reporter preferences. Continue?')) {
                 return;
@@ -572,31 +535,6 @@
                 }
             } catch (error) {
                 showAlert('An error occurred.', 'danger');
-            }
-        }
-        
-        async function reloadReporters() {
-            if (!confirm('⚠️ WARNING: This will reload all 124 reporter accounts from the CSV data. Any custom passwords will be reset. Continue?')) {
-                return;
-            }
-            
-            showAlert('⏳ Reloading reporter accounts...', 'info');
-            
-            try {
-                const response = await fetch('/api/reload-reporters-from-csv', {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showAlert('✅ ' + data.message, 'success');
-                    setTimeout(() => location.reload(), 2000);
-                } else {
-                    showAlert('❌ ' + (data.error || 'Failed to reload reporters.'), 'danger');
-                }
-            } catch (error) {
-                showAlert('❌ An error occurred: ' + error, 'danger');
             }
         }
         
