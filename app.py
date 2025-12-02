@@ -1095,5 +1095,44 @@ def initialize_system():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/upload-preferences-page')
+def upload_preferences_page():
+    """TEMPORARY: Show upload interface (ADMIN ONLY)"""
+    if not session.get('is_manager'):
+        return redirect(url_for('login'))
+    return render_template('upload_preferences.html')
+
+@app.route('/api/upload-preferences', methods=['POST'])
+def upload_preferences_endpoint():
+    """TEMPORARY: Upload a new preferences.json file (ADMIN ONLY)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        data = request.json
+        new_preferences = data.get('preferences')
+        
+        if not new_preferences:
+            return jsonify({'error': 'No preferences data provided'}), 400
+        
+        # Create backup of current preferences first
+        current_prefs = get_preferences()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_file = os.path.join(BACKUP_DIR, f'manual_backup_before_upload_{timestamp}.json')
+        with open(backup_file, 'w') as f:
+            json.dump(current_prefs, f, indent=2)
+        
+        # Save new preferences
+        save_json(PREFERENCES_FILE, new_preferences)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Preferences uploaded successfully. Backup saved.',
+            'reporters_count': len(new_preferences)
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
