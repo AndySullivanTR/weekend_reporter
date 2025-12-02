@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Preferences - Reuters Weekend Reporter</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 50px auto; 
+            padding: 20px;
+            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+            min-height: 100vh;
+        }
+        .container { 
+            background: white; 
+            padding: 40px; 
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #FF6B35;
+            margin-bottom: 10px;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        button { 
+            background: #FF6B35; 
+            color: white; 
+            padding: 15px 30px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover { background: #e55a24; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #status { 
+            margin-top: 20px; 
+            padding: 15px; 
+            border-radius: 5px; 
+            display: none; 
+        }
+        .success { background: #d4edda; color: #155724; display: block; }
+        .error { background: #f8d7da; color: #721c24; display: block; }
+        .file-info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        input[type="file"] {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            width: 100%;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Upload Preferences File</h1>
+        <p style="color: #666; font-size: 14px;">Admin Tool - Weekend Reporter Shift System</p>
+        
+        <div class="warning">
+            <strong>⚠️ Warning:</strong> This will replace the entire preferences.json file.
+            A backup will be created automatically before upload.
+        </div>
+        
+        <p><strong>Instructions:</strong></p>
+        <ol>
+            <li>Make sure you have the <code>preferences_FINAL.json</code> file ready</li>
+            <li>Click "Choose File" below and select it</li>
+            <li>Click "Upload Preferences File"</li>
+            <li>Wait for confirmation</li>
+        </ol>
+        
+        <input type="file" id="fileInput" accept=".json">
+        
+        <div id="fileInfo" class="file-info" style="display:none;"></div>
+        
+        <button id="uploadBtn" onclick="uploadFile()" disabled>Upload Preferences File</button>
+        
+        <div id="status"></div>
+        
+        <p style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+            <a href="/manager/dashboard" style="color: #FF6B35;">← Back to Manager Dashboard</a>
+        </p>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileInfo = document.getElementById('fileInfo');
+        const statusDiv = document.getElementById('status');
+        
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                const file = e.target.files[0];
+                fileInfo.style.display = 'block';
+                fileInfo.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+                uploadBtn.disabled = false;
+            } else {
+                fileInfo.style.display = 'none';
+                uploadBtn.disabled = true;
+            }
+        });
+        
+        async function uploadFile() {
+            statusDiv.style.display = 'none';
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Uploading...';
+            
+            if (!fileInput.files.length) {
+                showStatus('error', 'Please select a file first');
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Preferences File';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = async function(e) {
+                try {
+                    const preferences = JSON.parse(e.target.result);
+                    
+                    const response = await fetch('/api/upload-preferences', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ preferences: preferences })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showStatus('success', `✓ Success! Uploaded ${result.reporters_count} reporter preferences. ${result.message}`);
+                    } else {
+                        showStatus('error', `✗ Error: ${result.error}`);
+                    }
+                } catch (error) {
+                    showStatus('error', `✗ Error: ${error.message}`);
+                }
+                
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Preferences File';
+            };
+            
+            reader.onerror = function() {
+                showStatus('error', '✗ Error reading file');
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Preferences File';
+            };
+            
+            reader.readAsText(file);
+        }
+        
+        function showStatus(type, message) {
+            statusDiv.className = type;
+            statusDiv.textContent = message;
+        }
+    </script>
+</body>
+</html>
