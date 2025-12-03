@@ -406,8 +406,8 @@ def allocate_shifts():
     assignments = {rep: [] for rep in reporter_list}
     shift_assignments = {shift['id']: [] for shift in SHIFTS}
     
-    # Set random seed for reproducibility
-    random.seed(42)
+    # Use truly random shuffle (no fixed seed)
+    # This ensures no one can claim the allocation was predetermined
     
     # PHASE 1: Allocate for reporters WITH preferences
     # Strategy: Fill weeks 1-20 first (shifts 0-59), then week 21 (shifts 60-62)
@@ -475,10 +475,17 @@ def allocate_shifts():
                     if shift_id in bottom_5 or shift_id in top_10:
                         continue
                     
-                    # Check shift type match
+                    # Check shift type match (support both OLD and NEW structures)
                     shift_matches = False
+                    # OLD structure: 'saturday' matches any Saturday
                     if shift_type == 'saturday' and shift['day'] == 'Saturday':
                         shift_matches = True
+                    # NEW structure: 'saturday_morning' and 'saturday_evening'
+                    elif shift_type == 'saturday_morning' and shift['day'] == 'Saturday' and '8:00 AM' in shift['time']:
+                        shift_matches = True
+                    elif shift_type == 'saturday_evening' and shift['day'] == 'Saturday' and '3:00 PM' in shift['time']:
+                        shift_matches = True
+                    # Both structures: Sunday shifts
                     elif shift_type == 'sunday_morning' and shift['day'] == 'Sunday' and '8:00 AM' in shift['time']:
                         shift_matches = True
                     elif shift_type == 'sunday_evening' and shift['day'] == 'Sunday' and '3:00 PM' in shift['time']:
@@ -1091,6 +1098,152 @@ def initialize_system():
             'total_accounts': len(reporters),
             'note': 'You can now login with your credentials'
         })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/allocation-report')
+def allocation_report():
+    """Generate preference satisfaction report after allocation (ADMIN ONLY)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        preferences = get_preferences()
+        assignments = get_assignments()
+        reporters_data = get_reporters()
+        
+        # Analyze allocation results
+        rank_counts = {i: 0 for i in range(1, 11)}
+        fallback_count = 0
+        bottom_5_violations = []
+        fallback_reporters = []
+        
+        for username, assigned_shifts in assignments.items():
+            if not assigned_shifts or username not in preferences:
+                continue
+            
+            prefs = preferences[username]
+            top_10 = prefs.get('top_10', [])
+            bottom_5 = prefs.get('bottom_5', [])
+            
+            assigned_shift = assigned_shifts[0]
+            
+            # Check if in top_10
+            if assigned_shift in top_10:
+                rank = top_10.index(assigned_shift) + 1
+                rank_counts[rank] += 1
+            # Check if in bottom_5 (should never happen!)
+            elif assigned_shift in bottom_5:
+                bottom_5_violations.append({
+                    'name': reporters_data[username]['name'],
+                    'username': username,
+                    'shift_id': assigned_shift
+                })
+            # Fallback assignment
+            else:
+                fallback_count += 1
+                fallback_reporters.append({
+                    'name': reporters_data[username]['name'],
+                    'username': username,
+                    'shift_id': assigned_shift
+                })
+        
+        total_with_prefs = sum(1 for prefs in preferences.values() 
+                               if prefs and len(prefs.get('top_10', [])) == 10)
+        top_10_total = sum(rank_counts.values())
+        
+        return jsonify({
+            'success': True,
+            'statistics': {
+                'total_with_preferences': total_with_prefs,
+                'got_top_10': top_10_total,
+                'got_fallback': fallback_count,
+                'bottom_5_violations': len(bottom_5_violations),
+                'rank_breakdown': rank_counts,
+                'top_10_percentage': round(top_10_total / total_with_prefs * 100, 1) if total_with_prefs else 0
+            },
+            'fallback_reporters': fallback_reporters,
+            'bottom_5_violations': bottom_5_violations
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/export-mailmerge')
+def export_mailmerge():
+    """Export simple CSV for mail merge: Reporter Name, Shift (in chronological order)"""
+    if not session.get('is_manager'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        import csv
+        from io import StringIO
+        
+        assignments = get_assignments()
+        reporters = get_reporters()
+        
+        # Build list of assignments in chronological order
+        shift_assignments = []
+        
+        for shift in SHIFTS:  # SHIFTS are already in chronological order
+            shift_id = shift['id']
+            
+            # Find who's assigned to this shift
+            for username, assigned_shifts in assignments.items():
+                if shift_id in assigned_shifts:
+                    reporter_name = reporters[username]['name']
+                    
+                    # Format date: "Dec. 14" from "2025-12-14"
+                    date_obj = datetime.strptime(shift['date'], '%Y-%m-%d')
+                    month = date_obj.strftime('%b.')
+                    day = str(date_obj.day)  # Removes leading zero automatically
+                    formatted_date = f"{month} {day}"
+                    
+                    # Format time: "8-4" from "8:00 AM - 4:00 PM"
+                    time_str = shift['time']
+                    if '8:00 AM - 4:00 PM' in time_str:
+                        time_formatted = '8-4'
+                    elif '3:00 PM - 10:00 PM' in time_str:
+                        time_formatted = '3-10'
+                    else:
+                        time_formatted = time_str  # Fallback
+                    
+                    # Format: "Saturday, Dec. 14, 8-4 ET"
+                    shift_formatted = f"{shift['day']}, {formatted_date}, {time_formatted} ET"
+                    
+                    shift_assignments.append({
+                        'reporter_name': reporter_name,
+                        'shift': shift_formatted,
+                        'date': shift['date']  # For sorting verification
+                    })
+        
+        # Create CSV
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow(['Reporter Name', 'Shift'])
+        
+        # Write data (already in chronological order)
+        for assignment in shift_assignments:
+            writer.writerow([assignment['reporter_name'], assignment['shift']])
+        
+        # Convert to bytes
+        output.seek(0)
+        csv_content = output.getvalue()
+        
+        from io import BytesIO
+        bytes_output = BytesIO()
+        bytes_output.write(csv_content.encode('utf-8'))
+        bytes_output.seek(0)
+        
+        return send_file(
+            bytes_output,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'mailmerge_{datetime.now().strftime("%Y%m%d")}.csv'
+        )
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
